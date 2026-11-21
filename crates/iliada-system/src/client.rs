@@ -16,6 +16,9 @@ pub fn socket_path() -> PathBuf {
 
 /// Send `request`; `on_event` sees every progress event; returns the result.
 pub async fn call(request: &Request, on_event: &mut (dyn FnMut(&Event) + Send)) -> Result<serde_json::Value> {
+    // In a terminal (over SSH, say) there may be no password window: polkit
+    // then asks here. It stays out of the way of a desktop's own window.
+    let _agent = request.admin_action().and_then(|_| TerminalAgent::start());
     let path = socket_path();
     let stream = UnixStream::connect(&path)
         .await
@@ -35,6 +38,35 @@ pub async fn call(request: &Request, on_event: &mut (dyn FnMut(&Event) + Send)) 
         }
     }
     bail!("the Iliada system service stopped before answering")
+}
+
+/// polkit's terminal password prompt for this process, while it lives.
+struct TerminalAgent(std::process::Child);
+
+impl TerminalAgent {
+    fn start() -> Option<TerminalAgent> {
+        use std::io::IsTerminal;
+        if !std::io::stdin().is_terminal() {
+            return None;
+        }
+        let bin = ["/run/current-system/sw/bin/pkttyagent", "/usr/bin/pkttyagent"]
+            .into_iter()
+            .find(|p| std::path::Path::new(p).exists())?;
+        let child = std::process::Command::new(bin)
+            .args(["--process", &std::process::id().to_string(), "--fallback"])
+            .spawn()
+            .ok()?;
+        // It registers with polkit in a few milliseconds.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        Some(TerminalAgent(child))
+    }
+}
+
+impl Drop for TerminalAgent {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
 }
 
 /// [`call`] and decode the result.
