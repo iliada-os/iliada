@@ -259,7 +259,12 @@ goes through one root service, `iliada-systemd` (ADR 0006): command-line
 tools and services (`settings.toml`), applying the configuration, Iliada
 updates and backups. Its clients are Iliada Settings, the Setup Assistant
 and the `iliada` command; it checks that the caller is an administrator
-(`wheel`) from the socket's credentials, so nothing needs `sudo`. The user
+(`wheel`) from the socket's credentials, so nothing needs `sudo`, and for
+sensitive changes (tools, services, updates, configuration, restore) it asks
+polkit, which shows the desktop's password window (`pkttyagent` in a
+terminal) as a Mac does: `iliada_system::auth`, actions `org.iliada.system.*`
+(verified in the dev VM 2026-11-21: Settings → Services → SSH asked, Cancel
+refused, the password let it through; over SSH the terminal asked). The user
 layer (apps, preferences) changes instantly and never needs a rebuild:
 apps are installed by dragging a `.app` into Applications (or with the
 Store) and removed by dragging it to the Trash; `iliada-appd` records every

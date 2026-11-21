@@ -159,9 +159,14 @@ impl Service {
         }
     }
 
-    async fn dispatch(self: &Arc<Self>, uid: u32, req: Request, tx: &Sink) -> Result<Value> {
+    async fn dispatch(self: &Arc<Self>, (uid, pid): (u32, u32), req: Request, tx: &Sink) -> Result<Value> {
         if !req.read_only() && !users::is_admin(uid) {
             bail!("Only an administrator can change this computer's settings.");
+        }
+        // Sensitive changes need the password too, asked before the job
+        // lock so a password window left open doesn't block anyone else.
+        if let Some(action) = req.admin_action() {
+            iliada_system::auth::authorize(action, pid, uid).await?;
         }
         match &req {
             Request::Status => return Ok(serde_json::to_value(self.status(uid))?),
@@ -510,7 +515,8 @@ fn iliada_store_key() -> &'static str {
 }
 
 async fn handle(svc: Arc<Service>, stream: UnixStream) -> Result<()> {
-    let uid = stream.peer_cred()?.uid();
+    let cred = stream.peer_cred()?;
+    let (uid, pid) = (cred.uid(), cred.pid().and_then(|p| u32::try_from(p).ok()).unwrap_or(0));
     let (read, mut write) = stream.into_split();
     let mut line = String::new();
     BufReader::new(read.take(64 << 10)).read_line(&mut line).await?;
@@ -525,7 +531,7 @@ async fn handle(svc: Arc<Service>, stream: UnixStream) -> Result<()> {
         }
     });
     let result = match serde_json::from_str::<Request>(&line) {
-        Ok(req) => svc.dispatch(uid, req, &tx).await,
+        Ok(req) => svc.dispatch((uid, pid), req, &tx).await,
         Err(e) => Err(anyhow!("bad request: {e}")),
     };
     let _ = tx.send(match result {

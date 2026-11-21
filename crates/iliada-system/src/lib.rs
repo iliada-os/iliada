@@ -10,6 +10,7 @@
 //! change is a commit, and backups are that history, pushed to GitHub.
 
 pub mod apply;
+pub mod auth;
 pub mod backup;
 pub mod client;
 pub mod github;

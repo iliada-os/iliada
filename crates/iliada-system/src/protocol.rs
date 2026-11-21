@@ -57,6 +57,19 @@ impl Request {
         matches!(self, Request::Status)
     }
 
+    /// Changes that need the administrator's password (as on a Mac): the
+    /// polkit action that asks for it (nix/modules/system.nix declares them).
+    /// Store app updates and Homer's settings don't ask.
+    pub fn admin_action(&self) -> Option<&'static str> {
+        Some(match self {
+            Request::AddTools { .. } | Request::RemoveTools { .. } => "org.iliada.system.tools",
+            Request::SetService { .. } | Request::SetServiceBoot { .. } => "org.iliada.system.services",
+            Request::UpdateSystem | Request::SetTestingUpdates { .. } => "org.iliada.system.update",
+            Request::Apply | Request::Restore { .. } | Request::BackupEnable { .. } => "org.iliada.system.configure",
+            _ => return None,
+        })
+    }
+
     /// What the service is doing while it handles this request (shown to
     /// other clients as "busy").
     pub fn activity(&self) -> &'static str {

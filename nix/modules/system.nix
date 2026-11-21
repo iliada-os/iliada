@@ -5,6 +5,35 @@
 let
   cfg = config.iliada.system;
   pkg = config.iliada.package;
+  # What asks for the administrator's password, with the words the
+  # password window shows. Remembered for a few minutes (auth_admin_keep).
+  polkitActions = pkgs.writeTextDir "share/polkit-1/actions/org.iliada.system.policy" (
+        let
+          action = id: message: ''
+            <action id="org.iliada.system.${id}">
+              <description>${message}</description>
+              <message>${message}</message>
+              <defaults>
+                <allow_any>auth_admin</allow_any>
+                <allow_inactive>auth_admin</allow_inactive>
+                <allow_active>auth_admin_keep</allow_active>
+              </defaults>
+            </action>
+          '';
+        in
+        ''
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+            "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+          <policyconfig>
+            <vendor>Iliada</vendor>
+            ${action "tools" "Install or remove command-line tools on this computer"}
+            ${action "services" "Turn a service such as remote login (SSH) on or off"}
+            ${action "update" "Change how Iliada updates, or update it"}
+            ${action "configure" "Change this computer's configuration"}
+          </policyconfig>
+        ''
+  );
 in
 {
   options.iliada.system = {
@@ -76,7 +105,7 @@ in
       message = "iliada.system.firstBoot needs the Iliada flake (build the system with iliada.lib.iliadaSystem)";
     }];
 
-    environment.systemPackages = [ pkg ] ++ lib.optional cfg.systemctlBridge (lib.hiPrio (pkgs.writeShellScriptBin "systemctl" ''
+    environment.systemPackages = [ pkg polkitActions ] ++ lib.optional cfg.systemctlBridge (lib.hiPrio (pkgs.writeShellScriptBin "systemctl" ''
       # Typed by a person: through Iliada (see iliada-systemctl). Scripts:
       # the real systemctl, untouched.
       if [ -t 0 ] && [ -t 2 ]; then
@@ -105,11 +134,16 @@ in
       };
     };
 
+    # Sensitive changes ask for the administrator's password (as on a Mac):
+    # polkit, with the actions in polkitActions (the let above).
+    security.polkit.enable = true;
+
     systemd.services.iliada-system = {
       description = "Iliada system service";
       wantedBy = [ "multi-user.target" ];
       after = [ "network.target" ] ++ lib.optional cfg.firstBoot.enable "iliada-first-boot.service";
-      path = [ config.system.build.nixos-rebuild config.nix.package pkgs.git ];
+      # pkcheck: sensitive changes ask for the administrator's password.
+      path = [ config.system.build.nixos-rebuild config.nix.package pkgs.git (lib.getBin config.security.polkit.package) ];
       environment = {
         ILIADA_VERSION = config.iliada.version;
         ILIADA_UPDATE_URL = cfg.updateUrl;

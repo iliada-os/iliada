@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Sensitive changes ask for your password**, as on a Mac: turning on
+  remote login (SSH) or another service, installing command-line tools,
+  updating Iliada or changing how it updates, and restoring. Being an
+  administrator is no longer enough on its own, so neither an app nor Homer
+  can make these changes without you. The password is remembered for a few
+  minutes. In a terminal, `iliada` asks for it there.
 - **A new computer greets you in the Iliad look**: the login screen showed
   COSMIC's nebula and colours until someone had signed in once.
 
