@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Homer sounds a little like Homer**: a short Homeric line to open a
+  conversation (\"Sing, O Muse, of the photos set in order!\"), the odd
+  wine-dark sea, and plain words after that, or when something went wrong.
+  His voice is a text file you can change: Settings → Homer → Homer's
+  voice → Edit (delete it to go back).
 - **Sensitive changes ask for your password**, as on a Mac: turning on
   remote login (SSH) or another service, installing command-line tools,
   updating Iliada or changing how it updates, and restoring. Being an

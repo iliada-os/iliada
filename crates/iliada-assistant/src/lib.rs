@@ -28,8 +28,7 @@ const MAX_STEPS: usize = 25;
 
 const SYSTEM: &str = "You are Homer, the assistant built into Iliada, a Mac-like operating system. \
 You are named after the poet of the Iliad, and you know the Iliad, the Odyssey and the Greek myths very well: \
-when someone asks about them, answer gladly and well. A light Homeric touch now and then is welcome, \
-but you are first of all practical, plain-spoken and brief. \
+when someone asks about them, answer gladly and well. \
 You help the person using this computer by doing things for them with the tools you have: \
 installing, opening and removing apps from the Iliada Store, installing command-line software \
 (Python, Node.js, …), turning background services (SSH server, printing, nginx, databases, …) on and off, updating apps and Iliada, backing up, \
@@ -76,8 +75,55 @@ pub trait Frontend: Send + Sync {
     fn text_end(&self) {}
 }
 
+/// How Homer talks, unless the person wrote their own in [`voice_path`].
+pub const DEFAULT_VOICE: &str = "\
+# Homer's voice
+#
+# How Homer talks. Change it as you like; delete this file to go back to
+# the default. (Lines starting with # are notes for you, not for Homer.)
+
+You speak a little like the poet you are named after, but lightly:
+
+- Open the first answer of a conversation with one short Homeric line
+  turned to what was asked, such as \"Sing, O Muse, of the photos set in
+  order!\" or \"Tell me, Muse, of the printer that would not print.\" After
+  that, speak plainly.
+- Once in a while an epithet or an image from the Iliad or the Odyssey is
+  welcome: rosy-fingered Dawn in the morning, the wine-dark sea.
+- Never more than one flourish in an answer, and none at all when
+  something failed or the person is worried or in a hurry.
+- Above all you are practical, plain-spoken and brief.
+";
+
+/// The most of a voice file that is used.
+const MAX_VOICE: usize = 4000;
+
+/// Where a person keeps their own version of Homer's voice.
+pub fn voice_path() -> Option<std::path::PathBuf> {
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".config")))?;
+    Some(config.join("iliada").join("homer-voice.md"))
+}
+
+/// The voice to use: the person's file if there is one, else the default,
+/// without the notes (`#` lines) and cut to a sensible length.
+fn voice(own: Option<String>) -> String {
+    let text = own.filter(|t| !t.trim().is_empty()).unwrap_or_else(|| DEFAULT_VOICE.to_owned());
+    let kept: String =
+        text.lines().filter(|l| !l.trim_start().starts_with('#')).collect::<Vec<_>>().join("\n").trim().to_owned();
+    kept.chars().take(MAX_VOICE).collect()
+}
+
 fn system_prompt(full_access: bool) -> String {
-    format!("{SYSTEM} {}\n\n{SYSTEM_RULES}\n- {RULES}", if full_access { FULL } else { LIMITED })
+    let own = voice_path().and_then(|p| std::fs::read_to_string(p).ok());
+    // The voice comes before the rules, so it can colour how Homer talks but
+    // never change what he may do.
+    format!(
+        "{SYSTEM} {}\n\nYour voice, as the person set it:\n{}\n\n{SYSTEM_RULES}\n- {RULES}",
+        if full_access { FULL } else { LIMITED },
+        voice(own)
+    )
 }
 
 /// A conversation with the assistant.
@@ -438,6 +484,17 @@ fn text_of(content: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_voice_is_the_persons_file_without_notes_and_comes_before_the_rules() {
+        let default = voice(None);
+        assert!(default.contains("Sing, O Muse") && !default.contains('#'), "{default}");
+        assert_eq!(voice(Some("   \n".into())), default, "an empty file means the default");
+        assert_eq!(voice(Some("# my note\nSpeak like a pirate.".into())), "Speak like a pirate.");
+        assert_eq!(voice(Some("x".repeat(9000))).len(), MAX_VOICE);
+        let p = system_prompt(false);
+        assert!(p.find("Your voice").unwrap() < p.find("How to work").unwrap());
+    }
     use std::sync::{Arc, Mutex};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 

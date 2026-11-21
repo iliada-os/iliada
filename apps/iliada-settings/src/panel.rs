@@ -247,6 +247,8 @@ pub enum Message {
     SaveReport,
     ReportSaved(Result<String, String>),
     OpenReport,
+    /// Open Homer's voice file (made from the default the first time).
+    EditVoice,
     Confirmed,
     Cancel,
     Dismiss,
@@ -752,6 +754,19 @@ impl Panel {
                     })),
             );
             items.push(model.into());
+            items.push(
+                settings::section()
+                    .title("Voice")
+                    .add(
+                        settings::item::builder("Homer's voice")
+                            .description(
+                                "How he talks: plainly, with a light Homeric touch now and then (\"Sing, O Muse…\"). \
+                                 It is a text file you can change; delete it to go back to this.",
+                            )
+                            .control(widget::button::standard("Edit").on_press(Message::EditVoice)),
+                    )
+                    .into(),
+            );
             items.push(self.key_section(&a.model));
             items.push(self.email_section());
         }
@@ -1308,6 +1323,22 @@ impl Panel {
                     let _ = std::process::Command::new("xdg-open").arg(path).spawn();
                 }
             }
+            Message::EditVoice => match iliada_assistant::voice_path() {
+                Some(path) => {
+                    if !path.exists() {
+                        let made = path
+                            .parent()
+                            .map_or(Ok(()), std::fs::create_dir_all)
+                            .and_then(|()| std::fs::write(&path, iliada_assistant::DEFAULT_VOICE));
+                        if let Err(e) = made {
+                            self.error = Some(format!("Couldn't make Homer's voice file: {e}"));
+                            return Task::none();
+                        }
+                    }
+                    let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
+                }
+                None => self.error = Some("There is no home folder to keep Homer's voice in.".into()),
+            },
         }
         Task::none()
     }
