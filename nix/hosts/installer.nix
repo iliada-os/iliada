@@ -35,11 +35,39 @@ in
     };
     applications.ingest.enable = false;
   };
-  # A smaller download (the installed system keeps both): COSMIC's document
-  # reader brings OCR for every language (1 GB), and System76's scheduler
-  # brings kernel tracing tools (170 MB); a live session needs neither.
+  # A smaller download. The installed system keeps the document reader,
+  # a few OCR languages, the scheduler, mbrola voices, and full firmware.
   environment.cosmic.excludePackages = [ pkgs.cosmic-reader ];
   services.system76-scheduler.enable = lib.mkForce false;
+  # The stock graphical installer image ships Firefox for the NixOS manual.
+  # Iliada's installer does not need a browser, and Firefox pulls espeak's
+  # mbrola voices (~0.6 GB) along with it.
+  environment.defaultPackages = lib.mkForce (with pkgs; [
+    rsync
+    gparted
+    vim
+    nano
+  ]);
+  # Screen reader still works (espeak-ng); the extra mbrola voice bank does
+  # not. Overlay is ISO-only — installed systems are unchanged.
+  nixpkgs.overlays = [
+    (final: prev: {
+      espeak-ng = prev.espeak-ng.override { mbrolaSupport = false; };
+    })
+  ];
+  # Common PC hardware (Wi-Fi, Intel/AMD GPUs, laptop sound). The full
+  # linux-firmware tree is phones, servers and NVIDIA. Intel/AMD microcode
+  # stays on (workstation.nix); only the firmware blobs are trimmed.
+  hardware.firmware = lib.mkForce (
+    with pkgs;
+    [
+      (callPackage ../firmware-common.nix { })
+      sof-firmware
+      alsa-firmware
+      rtl8761b-firmware
+      wireless-regdb
+    ]
+  );
   # sudo-rs here too (the stock installer profile enables C sudo); the live
   # user needs no password, as on the stock NixOS installer.
   security.sudo.enable = lib.mkForce false;

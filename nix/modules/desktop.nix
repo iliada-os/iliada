@@ -80,6 +80,21 @@ in
         libcosmicAppHook = prev.libcosmicAppHook.override {
           targetPackages = prev.targetPackages // { inherit (prev) cosmic-settings; };
         };
+        # Document Reader OCR: English, Greek, and a few common languages
+        # (every language together is ~1 GB). More can be added later by
+        # widening this list. The live ISO leaves the reader out entirely.
+        cosmic-reader = prev.cosmic-reader.override {
+          tesseract = final.tesseract.override {
+            enableLanguages = [
+              "eng"
+              "osd"
+              "ell"
+              "fra"
+              "deu"
+              "spa"
+            ];
+          };
+        };
         # The login screen shows a picture of its own until someone has signed
         # in once (it shows each person's wallpaper after that): the Iliad
         # wallpaper instead of COSMIC's nebula, so a new install starts in
