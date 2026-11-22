@@ -13,6 +13,13 @@
   administrator is no longer enough on its own, so neither an app nor Homer
   can make these changes without you. The password is remembered for a few
   minutes. In a terminal, `iliada` asks for it there.
+- **Your Iliada account keeps your apps and tools too** (not only your
+  desktop settings): the computer's app list and command-line tools are
+  backed up, sealed like everything else, moments after they change.
+  Restore on a new computer brings them back (it asks for the
+  administrator's password). GitHub backup stays for people without an
+  account, and Homer's "back up now" uses both. *(Built and tested in code;
+  not yet checked in a VM.)*
 - **A new computer greets you in the Iliad look**: the login screen showed
   COSMIC's nebula and colours until someone had signed in once.
 

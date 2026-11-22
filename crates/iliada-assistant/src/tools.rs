@@ -10,7 +10,7 @@ use anyhow::{Context, Result, bail};
 use iliada_bundle::decisions::{Decision, Decisions, key as permission_key};
 use iliada_store::{Store, StoreConfig};
 use iliada_system::client;
-use iliada_system::protocol::{AssistantMode, Request};
+use iliada_system::protocol::{AssistantMode, Request, Status};
 use serde_json::{Value, json};
 
 #[derive(Debug)]
@@ -35,7 +35,7 @@ pub fn all() -> Vec<Tool> {
     vec![
         Tool {
             name: "get_status",
-            description: "This computer now: Iliada version and update state, command-line tools, services (on/off), backup state, whether the user is an administrator, and the desktop (dark or light appearance, volume).",
+            description: "This computer now: Iliada version and update state, command-line tools, services (on/off), GitHub backup state, whether the user is an administrator, and the desktop (dark or light appearance, volume).",
             schema: none(),
             acts: false,
             full_access: false,
@@ -139,7 +139,7 @@ pub fn all() -> Vec<Tool> {
         },
         Tool {
             name: "back_up_now",
-            description: "Back up apps and settings to the user's GitHub backup now (only if backup is set up).",
+            description: "Back up now: to the person's Iliada account if they are signed in (desktop settings, Privacy answers, conversations, and this computer's apps and command-line tools, encrypted first), and to their GitHub backup if one is set up.",
             schema: none(),
             acts: true,
             full_access: false,
@@ -550,7 +550,27 @@ pub async fn run(store: &Store, name: &str, input: &Value) -> Result<String> {
         }
         "check_for_iliada_update" => system(Request::CheckSystemUpdate).await?,
         "update_iliada" => system(Request::UpdateSystem).await?,
-        "back_up_now" => system(Request::BackupNow).await?,
+        "back_up_now" => {
+            let mut out = serde_json::Map::new();
+            let files = iliada_account::Files::user()?;
+            if matches!(iliada_account::status(&files), iliada_account::Status::Ready { .. }) {
+                let done = match iliada_account::backup(&files, true).await? {
+                    iliada_account::Backup::Uploaded { files, .. } => json!({ "backed_up": true, "files": files }),
+                    iliada_account::Backup::Unchanged => json!({ "backed_up": false, "reason": "nothing changed" }),
+                };
+                out.insert("iliada_account".into(), done);
+            }
+            let status: Status = serde_json::from_value(system(Request::Status).await?)?;
+            if status.backup.repo.is_some() {
+                out.insert("github".into(), system(Request::BackupNow).await?);
+            }
+            if out.is_empty() {
+                bail!(
+                    "no backup is set up: sign in to an Iliada account (Settings → Iliada account) or turn on GitHub backup (Settings → Backup)"
+                );
+            }
+            Value::Object(out)
+        }
         "list_permissions" => {
             let d = Decisions::default_path().map(|p| Decisions::load(&p)).unwrap_or_default();
             Value::Array(

@@ -283,6 +283,7 @@ impl Service {
                 Ok(json!({}))
             }
             Request::Restore { repo } => self.restore(&repo, &log).await,
+            Request::RestoreSettings { settings, apps } => self.restore_settings(&settings, &apps, &log).await,
             Request::BackupSignOut => {
                 self.backups.set_token(None)?;
                 self.backups.save(&backup::State::default())?;
@@ -476,6 +477,44 @@ impl Service {
         match applied {
             Ok(()) => Ok(json!({ "repo": repo })),
             Err(e) => Err(e.context("your apps are being restored, but the restored settings could not be applied")),
+        }
+    }
+
+    /// Put another computer's apps and command-line tools in place (from the
+    /// person's Iliada account), apply them and install the apps. If the
+    /// settings don't apply, this computer's own come back; the apps still
+    /// install.
+    async fn restore_settings(&self, settings: &str, apps: &str, log: &(dyn Fn(String) + Sync)) -> Result<Value> {
+        const MAX: usize = 1 << 20;
+        if settings.len() > MAX || apps.len() > MAX {
+            bail!("these settings are too big to be Iliada's");
+        }
+        settings.parse::<DocumentMut>().context("the restored settings aren't readable")?;
+        apps.parse::<DocumentMut>().context("the restored app list isn't readable")?;
+        let path = self.settings_path();
+        let previous = std::fs::read_to_string(&path).unwrap_or_default();
+        log("Bringing back your apps and command-line tools".into());
+        std::fs::write(&path, settings)?;
+        let app_list = self.dir.join("apps.toml");
+        std::fs::write(&app_list, apps)?;
+        fix_app_list(&app_list);
+        init::commit_all(&self.dir, "Restored from the Iliada account")?;
+        log("Applying the restored settings".into());
+        let applied = apply::rebuild(&self.dir, log).await;
+        if let Err(e) = &applied {
+            tracing::warn!("restored settings failed to apply: {e:#}");
+            std::fs::write(&path, previous)?;
+            init::commit_all(&self.dir, "Keep this computer's settings (the restored ones did not apply)")?;
+        }
+        log("Installing your apps".into());
+        let _ = tokio::process::Command::new("systemctl")
+            .args(["start", "--no-block", "iliada-store-sync.service"])
+            .status()
+            .await;
+        self.back_up_quietly().await;
+        match applied {
+            Ok(()) => Ok(json!({ "restored": true })),
+            Err(e) => Err(e.context("your apps are being installed, but the restored settings could not be applied")),
         }
     }
 

@@ -2911,6 +2911,7 @@ version = "0.2.7"
 dependencies = [
  "anyhow",
  "async-trait",
+ "iliada-account",
  "iliada-bundle",
  "iliada-store",
  "iliada-system",

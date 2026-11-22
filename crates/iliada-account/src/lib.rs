@@ -32,6 +32,10 @@ pub const KEY_CHECK: &str = "key-check";
 const KEY_CHECK_TEXT: &[u8] = b"Iliada account key";
 /// The latest backup of a person's settings.
 pub const SETTINGS: &str = "settings";
+/// This computer's apps and command-line tools ([`ComputerSetup`]).
+pub const COMPUTER: &str = "computer";
+/// Where Iliada keeps a computer's configuration.
+pub const SYSTEM_DIR: &str = "/etc/iliada";
 
 /// The server this computer uses, if Iliada was set up with one
 /// (`ILIADA_ACCOUNT_SERVER`, set by `iliada.account.server`).
@@ -51,6 +55,9 @@ pub struct State {
     pub last_error: Option<String>,
     /// Of the files last backed up: skip the upload when nothing changed.
     pub last_digest: Option<String>,
+    /// Of the last computer setup backed up (its apps and tools).
+    #[serde(default)]
+    pub last_computer_digest: Option<String>,
 }
 
 /// Where a person's sign-in and key are kept.
@@ -59,6 +66,9 @@ pub struct Files {
     pub home: PathBuf,
     pub state: PathBuf,
     pub key: PathBuf,
+    /// This computer's configuration (`/etc/iliada`): its apps and
+    /// command-line tools are backed up from there.
+    pub system: PathBuf,
 }
 
 impl Files {
@@ -70,7 +80,12 @@ impl Files {
     }
 
     pub fn at(home: &Path, dir: &Path) -> Files {
-        Files { home: home.to_owned(), state: dir.join("account.json"), key: dir.join("account-key") }
+        Files {
+            home: home.to_owned(),
+            state: dir.join("account.json"),
+            key: dir.join("account-key"),
+            system: PathBuf::from(SYSTEM_DIR),
+        }
     }
 
     pub fn load(&self) -> Option<State> {
@@ -331,21 +346,36 @@ pub async fn backup(files: &Files, force: bool) -> Result<Backup> {
             Manifest { computer: s.computer.clone(), created: now(), iliada: env!("CARGO_PKG_VERSION").into() };
         let home = files.home.clone();
         let packed = tokio::task::spawn_blocking(move || snapshot::pack(&home, &manifest)).await??;
-        if !force && s.last_digest.as_deref() == Some(packed.digest.as_str()) {
-            return Ok((Backup::Unchanged, packed.digest));
+        let mut backup = Backup::Unchanged;
+        if force || s.last_digest.as_deref() != Some(packed.digest.as_str()) {
+            let sealed = key.seal(SETTINGS, &packed.bytes)?;
+            let bytes = sealed.len();
+            api.put(SETTINGS, sealed).await?;
+            backup = Backup::Uploaded { files: packed.files, bytes };
         }
-        let sealed = key.seal(SETTINGS, &packed.bytes)?;
-        let bytes = sealed.len();
-        api.put(SETTINGS, sealed).await?;
-        Ok::<_, anyhow::Error>((Backup::Uploaded { files: packed.files, bytes }, packed.digest))
+        // The computer's apps and tools, when they changed (a computer
+        // without /etc/iliada, a test VM, has none).
+        let mut computer_digest = s.last_computer_digest.clone();
+        if let Some(setup) = ComputerSetup::read(&files.system, &s.computer, now()) {
+            let digest = setup.digest();
+            if force || computer_digest.as_deref() != Some(digest.as_str()) {
+                api.put(COMPUTER, key.seal(COMPUTER, &serde_json::to_vec(&setup)?)?).await?;
+                computer_digest = Some(digest);
+                if backup == Backup::Unchanged {
+                    backup = Backup::Uploaded { files: 2, bytes: setup.settings.len() + setup.apps.len() };
+                }
+            }
+        }
+        Ok::<_, anyhow::Error>((backup, packed.digest, computer_digest))
     }
     .await;
     match result {
-        Ok((b, digest)) => {
+        Ok((b, digest, computer_digest)) => {
             if b != Backup::Unchanged {
                 s.last_backup = Some(now());
             }
             s.last_digest = Some(digest);
+            s.last_computer_digest = computer_digest;
             s.last_error = None;
             files.save(&s)?;
             Ok(b)
@@ -361,6 +391,49 @@ pub async fn backup(files: &Files, force: bool) -> Result<Backup> {
 async fn latest_bytes(api: &Server, key: &AccountKey) -> Result<Option<Vec<u8>>> {
     match api.get(SETTINGS).await? {
         Some(sealed) => Ok(Some(key.open(SETTINGS, &sealed)?)),
+        None => Ok(None),
+    }
+}
+
+/// A computer's apps and command-line tools, as the account keeps them:
+/// its `/etc/iliada/settings.toml` and `apps.toml`. Putting them on another
+/// computer goes through the system service (it asks for the
+/// administrator's password and rebuilds).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ComputerSetup {
+    /// The computer it came from.
+    pub computer: String,
+    /// Seconds since 1970.
+    pub created: u64,
+    pub settings: String,
+    pub apps: String,
+}
+
+impl ComputerSetup {
+    /// This computer's, from `dir` (`None` if it has no configuration there).
+    pub fn read(dir: &Path, computer: &str, created: u64) -> Option<ComputerSetup> {
+        let settings = std::fs::read_to_string(dir.join("settings.toml")).ok()?;
+        let apps = std::fs::read_to_string(dir.join("apps.toml")).unwrap_or_default();
+        Some(ComputerSetup { computer: computer.to_owned(), created, settings, apps })
+    }
+
+    /// Of the contents only (not where or when): unchanged files, same digest.
+    fn digest(&self) -> String {
+        use sha2::{Digest, Sha256};
+        hex::encode(Sha256::new().chain_update(&self.settings).chain_update([0]).chain_update(&self.apps).finalize())
+    }
+
+    /// The same apps and tools as this computer has now.
+    pub fn matches(&self, dir: &Path) -> bool {
+        ComputerSetup::read(dir, "", 0).is_some_and(|here| here.digest() == self.digest())
+    }
+}
+
+/// The apps and tools the account keeps from its computers (the latest).
+pub async fn computer_setup(files: &Files) -> Result<Option<ComputerSetup>> {
+    let (_, api, key) = files.ready()?;
+    match api.get(COMPUTER).await? {
+        Some(sealed) => Ok(Some(serde_json::from_slice(&key.open(COMPUTER, &sealed)?)?)),
         None => Ok(None),
     }
 }
@@ -403,6 +476,21 @@ pub async fn sign_out(files: &Files) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_computer_setup_is_its_settings_and_apps() {
+        let d = tempfile::tempdir().unwrap();
+        assert!(ComputerSetup::read(d.path(), "pc", 1).is_none(), "no configuration, nothing to keep");
+        std::fs::write(d.path().join("settings.toml"), "tools = [\"python3\"]\n").unwrap();
+        std::fs::write(d.path().join("apps.toml"), "[apps.vlc]\n").unwrap();
+        let a = ComputerSetup::read(d.path(), "pc", 1).unwrap();
+        assert_eq!((a.computer.as_str(), a.apps.as_str()), ("pc", "[apps.vlc]\n"));
+        assert!(a.matches(d.path()));
+        // Where and when don't matter; contents do.
+        assert_eq!(a.digest(), ComputerSetup::read(d.path(), "laptop", 9).unwrap().digest());
+        std::fs::write(d.path().join("apps.toml"), "[apps.gimp]\n").unwrap();
+        assert!(!a.matches(d.path()));
+    }
 
     #[test]
     fn status_follows_the_files() {

@@ -49,6 +49,10 @@ pub enum Request {
     Restore { repo: String },
     /// Stop backing up and forget the GitHub sign-in.
     BackupSignOut,
+    /// Put a computer's apps and command-line tools in place (its
+    /// `settings.toml` and `apps.toml`, kept by the person's Iliada account),
+    /// apply them and install the apps.
+    RestoreSettings { settings: String, apps: String },
 }
 
 impl Request {
@@ -65,7 +69,10 @@ impl Request {
             Request::AddTools { .. } | Request::RemoveTools { .. } => "org.iliada.system.tools",
             Request::SetService { .. } | Request::SetServiceBoot { .. } => "org.iliada.system.services",
             Request::UpdateSystem | Request::SetTestingUpdates { .. } => "org.iliada.system.update",
-            Request::Apply | Request::Restore { .. } | Request::BackupEnable { .. } => "org.iliada.system.configure",
+            Request::Apply
+            | Request::Restore { .. }
+            | Request::RestoreSettings { .. }
+            | Request::BackupEnable { .. } => "org.iliada.system.configure",
             _ => return None,
         })
     }
@@ -86,6 +93,7 @@ impl Request {
             Request::BackupEnable { .. } | Request::BackupNow => "Backing up",
             Request::Restore { .. } => "Restoring a backup",
             Request::BackupSignOut => "Signing out",
+            Request::RestoreSettings { .. } => "Bringing back your apps and tools",
         }
     }
 }

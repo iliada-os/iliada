@@ -91,6 +91,20 @@ pub async fn run(cmd: AccountCmd) -> Result<()> {
         AccountCmd::Restore => {
             let (m, n) = account::restore(&files).await?;
             eprintln!("Restored {n} files from {} (backed up {}).", m.computer, crate::ago(m.created));
+            // The computer's apps and tools too (the system service asks for
+            // the administrator's password).
+            match account::computer_setup(&files).await? {
+                Some(setup) if !setup.matches(&files.system) => {
+                    eprintln!("Bringing back the apps and command-line tools from {}…", setup.computer);
+                    let request = iliada_system::protocol::Request::RestoreSettings {
+                        settings: setup.settings,
+                        apps: setup.apps,
+                    };
+                    crate::system(request, false).await?;
+                    eprintln!("Done. Your apps are installing in the background.");
+                }
+                _ => {}
+            }
         }
         AccountCmd::SignOut => {
             account::sign_out(&files).await?;
