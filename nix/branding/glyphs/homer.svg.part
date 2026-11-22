@@ -1,34 +1,54 @@
-<circle cx="128" cy="132" r="100" fill="#040A1A" opacity="0.3"/>
-  <circle cx="128" cy="128" r="100" fill="url(#il-bronze)"/>
-  <circle cx="128" cy="128" r="93" fill="url(#coin)"/>
-  <g fill="#F6D38E" opacity="0.75"><circle cx="128.00" cy="42.00" r="2.4"/><circle cx="142.93" cy="43.31" r="2.4"/><circle cx="157.41" cy="47.19" r="2.4"/><circle cx="171.00" cy="53.52" r="2.4"/><circle cx="183.28" cy="62.12" r="2.4"/><circle cx="193.88" cy="72.72" r="2.4"/><circle cx="202.48" cy="85.00" r="2.4"/><circle cx="208.81" cy="98.59" r="2.4"/><circle cx="212.69" cy="113.07" r="2.4"/><circle cx="214.00" cy="128.00" r="2.4"/><circle cx="212.69" cy="142.93" r="2.4"/><circle cx="208.81" cy="157.41" r="2.4"/><circle cx="202.48" cy="171.00" r="2.4"/><circle cx="193.88" cy="183.28" r="2.4"/><circle cx="183.28" cy="193.88" r="2.4"/><circle cx="171.00" cy="202.48" r="2.4"/><circle cx="157.41" cy="208.81" r="2.4"/><circle cx="142.93" cy="212.69" r="2.4"/><circle cx="128.00" cy="214.00" r="2.4"/><circle cx="113.07" cy="212.69" r="2.4"/><circle cx="98.59" cy="208.81" r="2.4"/><circle cx="85.00" cy="202.48" r="2.4"/><circle cx="72.72" cy="193.88" r="2.4"/><circle cx="62.12" cy="183.28" r="2.4"/><circle cx="53.52" cy="171.00" r="2.4"/><circle cx="47.19" cy="157.41" r="2.4"/><circle cx="43.31" cy="142.93" r="2.4"/><circle cx="42.00" cy="128.00" r="2.4"/><circle cx="43.31" cy="113.07" r="2.4"/><circle cx="47.19" cy="98.59" r="2.4"/><circle cx="53.52" cy="85.00" r="2.4"/><circle cx="62.12" cy="72.72" r="2.4"/><circle cx="72.72" cy="62.12" r="2.4"/><circle cx="85.00" cy="53.52" r="2.4"/><circle cx="98.59" cy="47.19" r="2.4"/><circle cx="113.07" cy="43.31" r="2.4"/></g>
-  <!-- the head, in relief: a shadow, then the head -->
-  <g transform="translate(2 3)" opacity="0.35" fill="#5A3410">
-    <path id="M96 84 C104 64 128 56 150 61 C161 64 166 73 166 84 L167 95 C168 100 171 105 176 112 C177.5 116 174 119 168 119 L168 123 C174 128 176 136 172 142 C177 148 176 156 170 160 C174 167 171 175 164 178 C166 186 160 193 152 194 C150 201 142 206 135 203 C130 198 126 192 122 186 L120 200 L96 200 C98 186 96 174 92 164 C84 162 80 154 84 148 C77 144 77 134 83 130 C77 124 79 114 86 112 C82 104 86 96 93 95 C92 90 93 86 96 84 Z" d="M92 92 C96 66 124 54 148 60 C160 63 166 72 166 84 L167 96 C168 100 171 105 176 113 C177 117 173 119 168 119 L168 124 C175 138 175 158 167 176 C161 190 150 200 136 206 C130 200 124 192 118 184 L117 200 L94 200 C97 184 95 170 89 158 C80 146 78 128 82 112 C84 102 88 96 92 92 Z"/>
+<!-- Homer: a front-facing bronze bust. Blind (eyes closed), bearded,
+       a red fillet in his hair, a short neck centred under the head,
+       draped shoulders on a small socle. -->
+  <g transform="translate(128 127) scale(1.1) translate(-128 -133)">
+  <g fill="#040A1A" opacity="0.3" transform="translate(0 4)">
+    <path d="M58 200 C56 180 68 166 94 158 L114 154 V126 C98 122 92 112 92 100 C88 68 104 48 128 48 C152 48 168 68 164 100 C164 112 158 122 142 126 V154 L162 158 C188 164 200 180 198 200 C180 206 150 194 128 194 C106 194 76 206 58 200 Z"/>
+    <rect x="80" y="204" width="96" height="14" rx="4"/>
   </g>
-  <path fill="url(#head)" d="M96 84 C104 64 128 56 150 61 C161 64 166 73 166 84 L167 95 C168 100 171 105 176 112 C177.5 116 174 119 168 119 L168 123 C174 128 176 136 172 142 C177 148 176 156 170 160 C174 167 171 175 164 178 C166 186 160 193 152 194 C150 201 142 206 135 203 C130 198 126 192 122 186 L120 200 L96 200 C98 186 96 174 92 164 C84 162 80 154 84 148 C77 144 77 134 83 130 C77 124 79 114 86 112 C82 104 86 96 93 95 C92 90 93 86 96 84 Z"/>
-  <!-- hair -->
-  <g fill="none" stroke="#A5671F" stroke-width="2.4" stroke-linecap="round" opacity="0.8">
-    <path d="M100 76 C106 70 112 70 116 74"/>
-    <path d="M118 66 C124 62 130 63 133 67"/>
-    <path d="M90 110 C92 104 97 102 101 105"/>
-    <path d="M86 128 C88 121 94 119 98 122"/>
-    <path d="M88 146 C90 139 96 137 100 140"/>
+  <!-- socle and base -->
+  <path fill="#A5671F" d="M110 190 H146 L154 208 H102 Z"/>
+  <rect x="80" y="204" width="96" height="14" rx="4" fill="#8A5418"/>
+  <rect x="80" y="204" width="96" height="5" rx="2.5" fill="url(#hm-base)"/>
+  <!-- neck, shaded under the jaw -->
+  <rect x="114" y="122" width="28" height="40" fill="url(#hm-neck)"/>
+  <!-- shoulders and drape -->
+  <path fill="url(#hm-drape)" d="M58 200 C56 180 68 166 94 158 L116 154 C121 161 135 161 140 154 L162 158 C188 164 200 180 198 200 C180 206 150 194 128 194 C106 194 76 206 58 200 Z"/>
+  <!-- himation over the left shoulder -->
+  <path fill="#A5671F" opacity="0.6" d="M74 166 C88 160 100 160 108 168 C124 184 156 192 196 194 C197 196 198 198 198 200 C190 202 182 201 174 199 C150 194 124 190 104 184 C88 180 72 184 60 192 C60 182 64 174 74 168 Z"/>
+  <path fill="none" stroke="#8A5418" stroke-width="2" stroke-linecap="round" opacity="0.6" d="M66 186 C84 176 102 178 118 184 M150 168 C164 172 176 180 182 190"/>
+  <path fill="#FFF1CC" opacity="0.4" d="M64 186 C64 176 74 166 92 161 C80 168 72 176 70 186 Z"/>
+  <!-- hair mass behind the face -->
+  <path fill="url(#hm-hair)" d="M92 100 C88 68 104 48 128 48 C152 48 168 68 164 100 C164 114 160 124 154 128 H102 C96 124 92 114 92 100 Z"/>
+  <!-- face -->
+  <ellipse cx="128" cy="103" rx="27" ry="32" fill="url(#hm-face)"/>
+  <!-- hair over the forehead, with curls -->
+  <path fill="url(#hm-hair)" d="M98 86 C97 66 110 58 128 58 C146 58 159 66 158 86 C146 76 110 76 98 86 Z"/>
+  <g fill="none" stroke="#7A4612" stroke-width="2.4" stroke-linecap="round" opacity="0.75">
+    <path d="M103 69 C105 62 112 60 116 63"/>
+    <path d="M120 61 C124 55 132 55 136 60"/>
+    <path d="M140 63 C144 60 151 62 153 69"/>
+    <path d="M94 104 C94 98 98 96 101 98"/>
+    <path d="M162 104 C162 98 158 96 155 98"/>
+    <path d="M94 116 C95 111 98 110 101 112"/>
+    <path d="M162 116 C161 111 158 110 155 112"/>
   </g>
-  <!-- ear -->
-  <path fill="none" stroke="#A5671F" stroke-width="2.6" stroke-linecap="round" d="M118 104 C112 104 110 112 113 118 C115 122 119 122 120 118"/>
-  <!-- closed eye: Homer was blind -->
-  <path fill="none" stroke="#7A4612" stroke-width="2.8" stroke-linecap="round" d="M146 97 C150 101 156 101 160 97"/>
-  <path fill="none" stroke="#A5671F" stroke-width="2" stroke-linecap="round" d="M145 89 C150 86 157 86 162 88"/>
-  <!-- mustache and beard -->
-  <path fill="none" stroke="#A5671F" stroke-width="2.6" stroke-linecap="round" d="M167 123 C160 126 152 125 147 120"/>
-  <g fill="none" stroke="#A5671F" stroke-width="2.4" stroke-linecap="round" opacity="0.85">
-    <path d="M150 132 C158 138 158 146 152 150 C146 154 147 162 154 166"/>
-    <path d="M138 134 C146 142 146 152 140 158 C134 164 136 174 144 180"/>
-    <path d="M126 142 C132 150 132 160 127 166 C122 172 124 182 131 190"/>
-    <path d="M162 140 C166 148 164 158 158 164"/>
+  <!-- fillet -->
+  <path fill="url(#il-crest)" d="M96 83 C108 72 148 72 160 83 L160 91 C148 80 108 80 96 91 Z"/>
+  <!-- brows, closed eyes (Homer was blind), nose -->
+  <g fill="none" stroke-linecap="round">
+    <path stroke="#A5671F" stroke-width="2.4" d="M110 97 C114 94 120 94 124 96 M146 97 C142 94 136 94 132 96"/>
+    <path stroke="#7A4612" stroke-width="2.6" d="M111 104 C114 107 119 107 122 104 M145 104 C142 107 137 107 134 104"/>
+    <path stroke="#B57A30" stroke-width="2.2" d="M128 100 V114 M124 117 C126 118 130 118 132 117"/>
   </g>
-  <!-- the fillet: a red band, its ties hanging behind -->
-  <path fill="none" stroke="url(#il-crest)" stroke-width="4.5" stroke-linecap="round" d="M91 101 C108 86 134 76 163 76"/>
-  <path fill="none" stroke="url(#il-crest)" stroke-width="3.5" stroke-linecap="round" d="M91 101 C86 110 82 116 76 122 M92 103 C91 112 89 120 86 128"/>
-  <path fill="#FFF1CC" opacity="0.35" d="M60 92 A74 74 0 0 1 112 50 A80 80 0 0 0 66 98 Z"/>
+  <!-- beard and moustache -->
+  <path fill="url(#hm-hair)" d="M101 110 C101 124 106 136 114 142 C119 146 124 148 128 148 C132 148 137 146 142 142 C150 136 155 124 155 110 C151 118 146 122 140 121 C135 120 131 119 128 121 C125 119 121 120 116 121 C110 122 105 118 101 110 Z"/>
+  <path fill="none" stroke="#5A3410" stroke-width="2.2" stroke-linecap="round" d="M122 127 C126 129 130 129 134 127"/>
+  <g fill="none" stroke="#5A3410" stroke-width="1.8" stroke-linecap="round" opacity="0.5">
+    <path d="M110 126 C111 132 114 137 118 140"/>
+    <path d="M146 126 C145 132 142 137 138 140"/>
+    <path d="M121 133 C122 138 124 141 126 144"/>
+    <path d="M135 133 C134 138 132 141 130 144"/>
+  </g>
+  <path fill="#FFF1CC" opacity="0.35" d="M104 72 C108 62 116 58 124 57 C116 62 110 68 108 78 Z"/>
+  </g>
