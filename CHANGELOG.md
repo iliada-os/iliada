@@ -5,9 +5,13 @@
 - **agora** is the name of the app marketplace (it was called Store). Docks
   from before this update show agora in Store's place.
 - **One look for every Iliada icon**: agora, Settings, Homer, the Setup
-  Assistant, Document Reader and the dock's tools sit on the same rounded
-  tile, bronze and red on navy. Apps you install from agora get the same
-  tile, so they sit with the rest.
+  Assistant, Document Reader and the dock's tools are bronze and red
+  shapes with a soft shadow, with no tile behind them, and read on light
+  and dark backgrounds. Apps you install from agora keep their own icon;
+  one that is just a plain square picture gets soft rounded corners so it
+  sits well with the rest.
+- **Homer has a new icon**: a bronze bust with his red headband, in place
+  of the old coin.
 
 ## 0.2.7 (2026-11-22)
 

@@ -79,12 +79,15 @@ this design they are the same mechanism.
 
   Iliada's own pieces sit on top: an Applications browser, Privacy settings
   (view and revoke grants), and the update UI. COSMIC's default top panel plus
-  dock is already close to the Mac layout. App icons share one navy squircle
-  tile (a continuous-curve superellipse, not a rounded rectangle) with bronze
-  and red glyphs (`nix/branding/tools/generate.py`, `app_icons.py`).
-  `iliada-appd` wraps a third-party `.app` icon in the same tile when it
-  exports the launcher entry, so the dock, the app library and Files look
-  like one set.
+  dock is already close to the Mac layout. Iliada's app icons are
+  freestanding bronze and red shapes with a soft drop shadow and no tile,
+  each sized by eye to the same visual weight
+  (`nix/branding/tools/generate.py`, `app_icons.py`). Third-party `.app`
+  icons are shown as they are. When one is a plain picture that fills its
+  whole box (no transparent corners), `iliada-appd` puts it on a soft
+  squircle tile (a continuous-curve superellipse, not a rounded rectangle)
+  with the same shadow when it exports the launcher entry, and Files uses
+  that tile too.
 * **FHS hiding** (`iliada.ux.hideFhs`) uses the freedesktop `/.hidden`
   convention so file managers show only the user's world. Developers can still
   see everything.
