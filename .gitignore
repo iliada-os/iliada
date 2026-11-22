@@ -4,3 +4,6 @@
 /result-*
 .direnv/
 .env
+__pycache__/
+*.pyc
+nix/branding/png/hicolor/
