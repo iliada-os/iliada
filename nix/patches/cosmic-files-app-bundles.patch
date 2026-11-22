@@ -42,7 +42,7 @@ index d462c11..0769632 100644
 +    path.extension().is_some_and(|e| e == "app") && path.join("Contents/Info.toml").is_file()
 +}
 +
-+/// Iliada: the navy-tile wrap `iliada-appd` wrote, the bundle's own icon,
++/// Iliada: the fallback tile `iliada-appd` wrote, the bundle's own icon,
 +/// or a generic application icon.
 +fn app_bundle_icon(path: &Path, size: u16) -> widget::icon::Handle {
 +    if let Some(name) = path.file_name() {

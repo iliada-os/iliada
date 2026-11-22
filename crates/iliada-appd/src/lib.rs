@@ -137,8 +137,8 @@ pub struct SyncReport {
 }
 
 /// Make `<export>/applications` mirror the GUI bundles in `apps`.
-/// Third-party icons are wrapped onto Iliada's navy tile under
-/// `<export>/icons/`.
+/// A third-party icon that is a plain square picture gets the fallback tile
+/// under `<export>/icons/`; icons with their own shape are used as they are.
 pub fn sync(apps: &Path, export: &Path, iliada_run: &Path) -> Result<SyncReport> {
     let dir = export.join("applications");
     let theme_icons = export.join("icons/hicolor/scalable/apps");
@@ -286,11 +286,12 @@ mod tests {
         assert!(text.contains("Comment=Perform arithmetic\n"), "only [Desktop Entry] keys are copied");
         assert!(text.contains("Keywords=math;sum;"));
         assert!(text.contains("StartupWMClass=org.gnome.Calculator"), "window ↔ entry matching");
-        assert!(text.contains("Icon=") && text.contains("iliada-org.debian.gnome-calculator.svg"));
-        let tile = export.join("icons/hicolor/scalable/apps/iliada-org.debian.gnome-calculator.svg");
-        let svg = fs::read_to_string(&tile).unwrap();
-        assert!(svg.contains(icon::TILE_MARK), "third-party icons sit on the navy tile");
-        assert!(export.join("icons/app-bundles/Calculator.app.svg").is_file());
+        assert!(
+            text.contains(&format!("Icon={}", calc.join("Contents/Resources/icon.svg").display())),
+            "an icon with its own shape is used as it is: {text}"
+        );
+        assert!(!export.join("icons/hicolor/scalable/apps/iliada-org.debian.gnome-calculator.svg").exists());
+        assert!(!export.join("icons/app-bundles/Calculator.app.svg").exists());
 
         // Idempotent.
         assert_eq!(sync(&apps, &export, run).unwrap(), SyncReport::default());
@@ -310,23 +311,30 @@ mod tests {
     }
 
     #[test]
-    fn already_tiled_icons_keep_their_path() {
+    fn square_icons_get_the_fallback_tile_until_they_have_a_shape() {
         let d = tempfile::tempdir().unwrap();
         let (apps, export) = (d.path().join("Applications"), d.path().join("export"));
         fs::create_dir_all(&apps).unwrap();
-        let calc = make(&apps, "Calculator", "org.debian.gnome-calculator", true);
+        make(&apps, "Calculator", "org.debian.gnome-calculator", true);
+        let icon_path = BundleLayout::in_dir(&apps, "Calculator").resources().join("icon.svg");
         fs::write(
-            BundleLayout::in_dir(&apps, "Calculator").resources().join("icon.svg"),
-            r#"<svg><clipPath id="iliada-tile"><path d="M0 0"/></clipPath></svg>"#,
+            &icon_path,
+            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="#333"/></svg>"##,
         )
         .unwrap();
         let run = Path::new("/run/current-system/sw/bin/iliada-run");
         sync(&apps, &export, run).unwrap();
+        let tile = export.join("icons/hicolor/scalable/apps/iliada-org.debian.gnome-calculator.svg");
+        let svg = fs::read_to_string(&tile).unwrap();
+        assert!(svg.contains(icon::TILE_MARK), "a square picture sits on the fallback tile");
+        assert!(export.join("icons/app-bundles/Calculator.app.svg").is_file(), "Files finds the same tile");
         let text = fs::read_to_string(export.join("applications/iliada-org.debian.gnome-calculator.desktop")).unwrap();
-        assert!(
-            text.contains(&format!("Icon={}", calc.join("Contents/Resources/icon.svg").display())),
-            "Iliada tiles are not wrapped again: {text}"
-        );
-        assert!(!export.join("icons/hicolor/scalable/apps/iliada-org.debian.gnome-calculator.svg").exists());
+        assert!(text.contains(&format!("Icon={}", tile.display())));
+
+        // An update that ships a shaped icon drops the tile again.
+        fs::write(&icon_path, r#"<svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="30"/></svg>"#).unwrap();
+        sync(&apps, &export, run).unwrap();
+        assert!(!tile.exists());
+        assert!(!export.join("icons/app-bundles/Calculator.app.svg").exists());
     }
 }
