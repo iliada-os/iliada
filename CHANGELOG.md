@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **agora** is the name of the app marketplace (it was called Store). Docks
+  from before this update show agora in Store's place.
+- **One look for every Iliada icon**: agora, Settings, Homer, the Setup
+  Assistant, Document Reader and the dock's tools sit on the same rounded
+  tile, bronze and red on navy. Apps you install from agora get the same
+  tile, so they sit with the rest.
+
 ## 0.2.7 (2026-11-22)
 
 - **Fixed: Settings links in 0.2.6** did nothing: the update notice, Homer's
