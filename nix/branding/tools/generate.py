@@ -122,7 +122,9 @@ write("iliada.svg", svg((0,0,256,256), f'  <g>\n    {mark_group()}\n  </g>', DEF
 # 3. mono
 write("iliada-mono.svg", svg((0,0,256,256), f'  <g fill="currentColor">\n    {mark_group(True)}\n  </g>', title="Iliada (mono)"))
 
-# 2. icon: squircle (superellipse n=5) as smooth cubic Beziers
+# 2. icon: squircle (superellipse n=5) as smooth cubic Beziers.
+# Radius 108 leaves a margin for a soft shadow, so the tile reads like a
+# macOS app icon at every size from 16 to 512.
 def squircle(cx, cy, r, n=5, seg=48):
     pts=[]
     for i in range(seg):
@@ -136,24 +138,45 @@ def squircle(cx, cy, r, n=5, seg=48):
         c2 = (p2[0]-(p3[0]-p1[0])/6, p2[1]-(p3[1]-p1[1])/6)
         d += f"C{P(c1,c2,p2)} "
     return d + "Z"
-SQ = squircle(128,128,120)
-ICON_DEFS = DEFS + """
-    <radialGradient id="il-navy" cx="128" cy="78" r="210" gradientUnits="userSpaceOnUse">
+TILE_R = 108
+SQ = squircle(128,128,TILE_R)
+SQ_RIM = squircle(128,128,TILE_R - 0.75)
+ICON_DEFS = DEFS + f"""
+    <radialGradient id="il-navy" cx="128" cy="72" r="190" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#22396A"/>
       <stop offset="0.6" stop-color="#14254A"/>
       <stop offset="1" stop-color="#0B1630"/>
     </radialGradient>
-    <linearGradient id="il-rim" x1="0" y1="8" x2="0" y2="248" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.14"/>
-      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
-      <stop offset="1" stop-color="#000000" stop-opacity="0.18"/>
-    </linearGradient>"""
-S = 0.72; T = 128 - 128*S
-icon_body = (f'  <path fill="url(#il-navy)" d="{SQ}"/>\n'
-  f'  <path fill="none" stroke="url(#il-rim)" stroke-width="1.5" d="{squircle(128,128,119.25)}"/>\n'
-  f'  <g transform="translate({f(T)} {f(T+4)}) scale({S})" fill="#040A1A" opacity="0.28">\n    {mark_group(True)}\n  </g>\n'
-  f'  <g transform="translate({f(T)} {f(T+1)}) scale({S})">\n    {mark_group()}\n  </g>')
-write("iliada-icon.svg", svg((0,0,256,256), icon_body, ICON_DEFS, "Iliada icon"))
+    <linearGradient id="il-rim" x1="0" y1="20" x2="0" y2="236" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.22"/>
+    </linearGradient>
+    <filter id="il-shadow" x="-25%" y="-10%" width="150%" height="155%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+      <feOffset dx="0" dy="6"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.34"/></feComponentTransfer>
+    </filter>
+    <clipPath id="il-tile"><path d="{SQ}"/></clipPath>"""
+
+def tile_icon(title, glyph, extra_defs="", scale=0.86):
+    body = (
+        f'  <path fill="#0B1630" filter="url(#il-shadow)" d="{SQ}"/>\n'
+        f'  <path fill="url(#il-navy)" d="{SQ}"/>\n'
+        f'  <path fill="none" stroke="url(#il-rim)" stroke-width="1.5" d="{SQ_RIM}"/>\n'
+        f'  <g clip-path="url(#il-tile)">\n'
+        f'    <g transform="translate(128 128) scale({f(scale)}) translate(-128 -128)">\n'
+        f'{glyph}\n'
+        f'    </g>\n'
+        f'  </g>'
+    )
+    return svg((0,0,256,256), body, ICON_DEFS + extra_defs, title)
+
+helmet_glyph = (
+    f'  <g fill="#040A1A" opacity="0.28" transform="translate(0 4)">\n    {mark_group(True)}\n  </g>\n'
+    f'  <g>\n    {mark_group()}\n  </g>'
+)
+write("iliada-icon.svg", tile_icon("Iliada icon", helmet_glyph, scale=0.62))
 
 # 4. wordmark "Iliada": geometric letters as filled outlines
 SW = 19          # stem width
@@ -199,15 +222,32 @@ def lockup(dark):
 s, LW = lockup(False); write("iliada-lockup.svg", s)
 s, _ = lockup(True); write("iliada-lockup-dark.svg", s)
 
-# ---- PNG exports ----
-import cairosvg, os
+# ---- app and system icons, then PNG exports ----
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import app_icons
+import cairosvg
+REPO = os.path.dirname(os.path.dirname(HERE))
+app_svgs = app_icons.generate(HERE, REPO, squircle, svg, tile_icon)
+
 B=OUT+'/'
+os.makedirs(B+'png/hicolor', exist_ok=True)
+PNG_SIZES = (16, 24, 32, 48, 64, 128, 256, 512)
+def png_hicolor(svg_path, icon_id, sizes=PNG_SIZES):
+    for sz in sizes:
+        dest = os.path.join(B, f'png/hicolor/{sz}x{sz}/apps')
+        os.makedirs(dest, exist_ok=True)
+        cairosvg.svg2png(url=svg_path, write_to=os.path.join(dest, f'{icon_id}.png'), output_width=sz, output_height=sz)
+
 for sz in (16,32,64,128,256,512,1024):
     cairosvg.svg2png(url=B+'iliada-icon.svg', write_to=B+f'png/iliada-icon-{sz}.png', output_width=sz, output_height=sz)
+png_hicolor(B+'iliada-icon.svg', 'iliada')
 cairosvg.svg2png(url=B+'iliada.svg', write_to=B+'png/iliada-512.png', output_width=512, output_height=512)
 cairosvg.svg2png(url=B+'iliada-mono.svg', write_to=B+'png/iliada-mono-512.png', output_width=512, output_height=512)
 for n in ('iliada-lockup','iliada-lockup-dark'):
     cairosvg.svg2png(url=B+n+'.svg', write_to=B+f'png/{n}-1600.png', output_width=1600)
+for svg_path, icon_id in app_svgs:
+    png_hicolor(svg_path, icon_id)
 
 # ---- fastfetch ASCII (logo.txt) ----
 import cairosvg, io, re

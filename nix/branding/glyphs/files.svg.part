@@ -1,0 +1,7 @@
+<path fill="#040A1A" opacity="0.3" transform="translate(0 4)" d="M52 84 H108 L120 98 H204 V192 H52 Z"/>
+  <path fill="#A5671F" d="M52 80 H106 L118 94 H204 V110 H52 Z"/>
+  <rect x="52" y="100" width="152" height="92" rx="6" fill="url(#il-bronze)"/>
+  <rect x="52" y="104" width="152" height="16" fill="#14254A"/>
+  <path fill="none" stroke="#F6D38E" stroke-width="2.2" stroke-linecap="square" d=" M70 116 V108 H78 V114 H74 V112 M82 116 V108 H90 V114 H86 V112 M94 116 V108 H102 V114 H98 V112 M106 116 V108 H114 V114 H110 V112 M118 116 V108 H126 V114 H122 V112 M130 116 V108 H138 V114 H134 V112 M142 116 V108 H150 V114 H146 V112 M154 116 V108 H162 V114 H158 V112 M166 116 V108 H174 V114 H170 V112 M178 116 V108 H186 V114 H182 V112"/>
+  <rect x="112" y="140" width="32" height="10" rx="5" fill="url(#il-crest)"/>
+  <path fill="#FFF1CC" opacity="0.35" d="M52 120 H204 V126 H52 Z"/>

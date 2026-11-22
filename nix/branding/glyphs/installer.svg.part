@@ -1,0 +1,17 @@
+<!-- the sea -->
+  <path fill="none" stroke="#F6D38E" stroke-opacity="0.35" stroke-width="3" stroke-linecap="round"
+        d="M36 196 q12 -8 24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 M48 212 q12 -8 24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0"/>
+  <!-- oars -->
+  <path fill="none" stroke="#A5671F" stroke-width="3" stroke-linecap="round" d="M78 163 L69 184 M91 163 L82 184 M104 163 L95 184 M117 163 L108 184 M130 163 L121 184 M143 163 L134 184 M156 163 L147 184 M169 163 L160 184 M182 163 L173 184 "/>
+  <!-- mast, yard and sail -->
+  <path stroke="#8A5418" stroke-width="5" stroke-linecap="round" d="M128 152 V58"/>
+  <path fill="url(#sail)" d="M88 70 H168 L162 140 Q128 132 94 140 Z"/>
+  <path fill="url(#il-crest)" d="M108 70 H120 L119 135 Q113 136 107 137 Z M136 70 H148 L149 137 Q143 136 137 135 Z"/>
+  <path stroke="#8A5418" stroke-width="5" stroke-linecap="round" d="M80 68 H176"/>
+  <!-- hull: high curled stern on the left, the ram on the right -->
+  <path fill="#040A1A" opacity="0.3" transform="translate(0 4)" d="M52 160 C70 172 170 174 196 166 L216 170 L206 156 C199 149 194 147 188 149 L66 149 C58 140 54 128 60 112 C47 124 43 146 52 160 Z"/>
+  <path fill="url(#il-bronze)" d="M52 160 C70 172 170 174 196 166 L216 170 L206 156 C199 149 194 147 188 149 L66 149 C58 140 54 128 60 112 C47 124 43 146 52 160 Z"/>
+  <path fill="none" stroke="#14254A" stroke-width="2.2" d="M64 158 C90 164 160 165 192 159"/>
+  <!-- the painted eye on the bow -->
+  <ellipse cx="192" cy="155" rx="6" ry="4" fill="#FFF8EA"/>
+  <circle cx="193" cy="155" r="2.4" fill="#0B1630"/>

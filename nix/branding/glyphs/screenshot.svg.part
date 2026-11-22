@@ -1,0 +1,4 @@
+<path fill="none" stroke="url(#il-bronze)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" d="M56 98 V64 H90 M166 64 H200 V98 M200 158 V192 H166 M90 192 H56 V158"/>
+  <circle cx="128" cy="128" r="36" fill="url(#il-crest)"/>
+  <circle cx="128" cy="128" r="16" fill="#14254A"/>
+  <circle cx="122" cy="122" r="5" fill="#FFF1CC" opacity="0.7"/>
