@@ -8,6 +8,12 @@
   back on later by setting `iliada.account.server` to
   `https://account.iliada-os.com` (one line). Computers already signed in
   keep their account and hourly backup.
+- **A smaller USB image**: the live session drops the bundled Firefox, the
+  extra spoken voices (mbrola), and firmware that isn't for common PC
+  hardware (phones, servers, NVIDIA). Wi-Fi and Intel/AMD graphics stay.
+  Installed systems keep a Document Reader that can read English, Greek,
+  French, German and Spanish (other languages were a gigabyte); more can
+  be added later.
 
 - **Homer sounds a little like Homer**: a short Homeric line to open a
   conversation (\"Sing, O Muse, of the photos set in order!\"), the odd
