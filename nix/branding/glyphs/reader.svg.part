@@ -1,0 +1,7 @@
+<rect x="72" y="70" width="112" height="124" fill="#040A1A" opacity="0.3" transform="translate(0 4)"/>
+  <rect x="72" y="70" width="112" height="124" fill="#F4E8CF"/>
+  <path fill="none" stroke="#8A5418" stroke-width="4" stroke-linecap="round" opacity="0.75" d=" M88 96 H168 M88 114 H168 M88 132 H168 M88 150 H168 M88 168 H140"/>
+  <rect x="58" y="58" width="140" height="18" rx="9" fill="url(#il-bronze)"/>
+  <rect x="58" y="188" width="140" height="18" rx="9" fill="url(#il-bronze)"/>
+  <circle cx="58" cy="67" r="10" fill="url(#il-crest)"/><circle cx="198" cy="67" r="10" fill="url(#il-crest)"/>
+  <circle cx="58" cy="197" r="10" fill="url(#il-crest)"/><circle cx="198" cy="197" r="10" fill="url(#il-crest)"/>

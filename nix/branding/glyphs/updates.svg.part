@@ -1,0 +1,12 @@
+<g fill="#040A1A" opacity="0.3" transform="translate(0 4)">
+    <circle cx="128" cy="128" r="78"/>
+  </g>
+  <circle cx="128" cy="128" r="78" fill="url(#il-bronze)"/>
+  <circle cx="128" cy="128" r="64" fill="#14254A"/>
+  <path fill="none" stroke="#F6D38E" stroke-width="3.2" stroke-linecap="square" d="
+    M128 70 V82 M158 78 L150 88 M180 98 L168 106
+    M186 128 H174 M180 158 L168 150 M158 178 L150 168
+    M128 186 V174 M98 178 L106 168 M76 158 L88 150
+    M70 128 H82 M76 98 L88 106 M98 78 L106 88"/>
+  <path fill="url(#il-crest)" d="M128 86 L170 148 H148 L128 118 L108 148 H86 Z"/>
+  <path fill="#FFF1CC" opacity="0.35" d="M86 108 A52 52 0 0 1 128 76 A56 56 0 0 0 92 112 Z"/>

@@ -9,7 +9,7 @@ the same hand-authored helmet and crest paths, so they always match.
 | File | What it is |
 | --- | --- |
 | `iliada.svg` | Main color mark, transparent background, 256×256. Installed as the `iliada` icon by `nix/modules/branding.nix`. |
-| `iliada-icon.svg` | App / launcher icon: the mark on a deep navy squircle. |
+| `iliada-icon.svg` | App / launcher icon: the mark on a deep navy squircle (superellipse n=5, inset for a soft shadow). |
 | `iliada-mono.svg` | Single-color mark using `currentColor`. Legible down to 16 px. |
 | `iliada-lockup.svg` | Mark plus "Iliada" wordmark, for light backgrounds. |
 | `iliada-lockup-dark.svg` | Same lockup, for dark backgrounds. |
@@ -21,8 +21,10 @@ the same hand-authored helmet and crest paths, so they always match.
 | `wallpaper/wine-dark-sea.svg` | The default wallpaper: the wine-dark sea at dusk, Troy on its hill (left), the Achaean ships (right). Rendered to a 3840 px PNG at build time (nix/modules/desktop.nix). |
 | `logo.txt` | fastfetch ASCII art. `$1` is the crest color, `$2` the helmet color. |
 | `fastfetch.jsonc` | fastfetch config that uses `logo.txt`. |
-| `png/` | Raster exports: icon at 16 to 1024 px, mark and mono mark at 512 px, lockups at 1600 px wide. |
+| `png/` | Raster exports: icon at 16 to 1024 px, mark and mono mark at 512 px, lockups at 1600 px wide. PNG sizes for the icon theme are built at install (`rsvg-convert`). |
+| `glyphs/` | Inner pictures for each app icon, without the tile. `tools/app_icons.py` wraps them. |
 | `tools/generate.py` | Regenerates all SVGs, PNGs and `logo.txt` (needs `cairosvg` and `pillow`). |
+| `tools/app_icons.py` | Shared tile plus the app and COSMIC icon list. |
 
 The wordmark is drawn as geometric outlines, so no font is needed.
 
@@ -46,7 +48,14 @@ The wordmark is drawn as geometric outlines, so no font is needed.
 ## Usage
 
 * Use `iliada.svg` wherever the OS logo appears on its own; use `iliada-icon.svg`
-  where a launcher or store expects a filled tile.
+  where a launcher or agora expects a filled tile. The named `iliada` icon in
+  the icon theme is the tile (About, the greeter, the launcher).
+* Every Iliada app icon (agora, Settings, Homer, Setup Assistant, the
+  installer, Files, Text Editor, Terminal, Media Player, Photos, Document
+  Reader, Screenshot, Search, System Monitor, the app library, Workspaces,
+  updates) uses the same navy tile, bronze and red, readable from 16 to
+  512 px. Apps installed as `.app` bundles get that tile when
+  `iliada-appd` exports them.
 * Use `iliada-mono.svg` for tiny sizes, the boot splash, panel / tray icons and
   anywhere only one color is allowed. Set the color with CSS `color` (or the
   `color` attribute on the `<svg>`).

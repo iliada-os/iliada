@@ -1,0 +1,34 @@
+<circle cx="128" cy="132" r="100" fill="#040A1A" opacity="0.3"/>
+  <circle cx="128" cy="128" r="100" fill="url(#il-bronze)"/>
+  <circle cx="128" cy="128" r="93" fill="url(#coin)"/>
+  <g fill="#F6D38E" opacity="0.75"><circle cx="128.00" cy="42.00" r="2.4"/><circle cx="142.93" cy="43.31" r="2.4"/><circle cx="157.41" cy="47.19" r="2.4"/><circle cx="171.00" cy="53.52" r="2.4"/><circle cx="183.28" cy="62.12" r="2.4"/><circle cx="193.88" cy="72.72" r="2.4"/><circle cx="202.48" cy="85.00" r="2.4"/><circle cx="208.81" cy="98.59" r="2.4"/><circle cx="212.69" cy="113.07" r="2.4"/><circle cx="214.00" cy="128.00" r="2.4"/><circle cx="212.69" cy="142.93" r="2.4"/><circle cx="208.81" cy="157.41" r="2.4"/><circle cx="202.48" cy="171.00" r="2.4"/><circle cx="193.88" cy="183.28" r="2.4"/><circle cx="183.28" cy="193.88" r="2.4"/><circle cx="171.00" cy="202.48" r="2.4"/><circle cx="157.41" cy="208.81" r="2.4"/><circle cx="142.93" cy="212.69" r="2.4"/><circle cx="128.00" cy="214.00" r="2.4"/><circle cx="113.07" cy="212.69" r="2.4"/><circle cx="98.59" cy="208.81" r="2.4"/><circle cx="85.00" cy="202.48" r="2.4"/><circle cx="72.72" cy="193.88" r="2.4"/><circle cx="62.12" cy="183.28" r="2.4"/><circle cx="53.52" cy="171.00" r="2.4"/><circle cx="47.19" cy="157.41" r="2.4"/><circle cx="43.31" cy="142.93" r="2.4"/><circle cx="42.00" cy="128.00" r="2.4"/><circle cx="43.31" cy="113.07" r="2.4"/><circle cx="47.19" cy="98.59" r="2.4"/><circle cx="53.52" cy="85.00" r="2.4"/><circle cx="62.12" cy="72.72" r="2.4"/><circle cx="72.72" cy="62.12" r="2.4"/><circle cx="85.00" cy="53.52" r="2.4"/><circle cx="98.59" cy="47.19" r="2.4"/><circle cx="113.07" cy="43.31" r="2.4"/></g>
+  <!-- the head, in relief: a shadow, then the head -->
+  <g transform="translate(2 3)" opacity="0.35" fill="#5A3410">
+    <path id="M96 84 C104 64 128 56 150 61 C161 64 166 73 166 84 L167 95 C168 100 171 105 176 112 C177.5 116 174 119 168 119 L168 123 C174 128 176 136 172 142 C177 148 176 156 170 160 C174 167 171 175 164 178 C166 186 160 193 152 194 C150 201 142 206 135 203 C130 198 126 192 122 186 L120 200 L96 200 C98 186 96 174 92 164 C84 162 80 154 84 148 C77 144 77 134 83 130 C77 124 79 114 86 112 C82 104 86 96 93 95 C92 90 93 86 96 84 Z" d="M92 92 C96 66 124 54 148 60 C160 63 166 72 166 84 L167 96 C168 100 171 105 176 113 C177 117 173 119 168 119 L168 124 C175 138 175 158 167 176 C161 190 150 200 136 206 C130 200 124 192 118 184 L117 200 L94 200 C97 184 95 170 89 158 C80 146 78 128 82 112 C84 102 88 96 92 92 Z"/>
+  </g>
+  <path fill="url(#head)" d="M96 84 C104 64 128 56 150 61 C161 64 166 73 166 84 L167 95 C168 100 171 105 176 112 C177.5 116 174 119 168 119 L168 123 C174 128 176 136 172 142 C177 148 176 156 170 160 C174 167 171 175 164 178 C166 186 160 193 152 194 C150 201 142 206 135 203 C130 198 126 192 122 186 L120 200 L96 200 C98 186 96 174 92 164 C84 162 80 154 84 148 C77 144 77 134 83 130 C77 124 79 114 86 112 C82 104 86 96 93 95 C92 90 93 86 96 84 Z"/>
+  <!-- hair -->
+  <g fill="none" stroke="#A5671F" stroke-width="2.4" stroke-linecap="round" opacity="0.8">
+    <path d="M100 76 C106 70 112 70 116 74"/>
+    <path d="M118 66 C124 62 130 63 133 67"/>
+    <path d="M90 110 C92 104 97 102 101 105"/>
+    <path d="M86 128 C88 121 94 119 98 122"/>
+    <path d="M88 146 C90 139 96 137 100 140"/>
+  </g>
+  <!-- ear -->
+  <path fill="none" stroke="#A5671F" stroke-width="2.6" stroke-linecap="round" d="M118 104 C112 104 110 112 113 118 C115 122 119 122 120 118"/>
+  <!-- closed eye: Homer was blind -->
+  <path fill="none" stroke="#7A4612" stroke-width="2.8" stroke-linecap="round" d="M146 97 C150 101 156 101 160 97"/>
+  <path fill="none" stroke="#A5671F" stroke-width="2" stroke-linecap="round" d="M145 89 C150 86 157 86 162 88"/>
+  <!-- mustache and beard -->
+  <path fill="none" stroke="#A5671F" stroke-width="2.6" stroke-linecap="round" d="M167 123 C160 126 152 125 147 120"/>
+  <g fill="none" stroke="#A5671F" stroke-width="2.4" stroke-linecap="round" opacity="0.85">
+    <path d="M150 132 C158 138 158 146 152 150 C146 154 147 162 154 166"/>
+    <path d="M138 134 C146 142 146 152 140 158 C134 164 136 174 144 180"/>
+    <path d="M126 142 C132 150 132 160 127 166 C122 172 124 182 131 190"/>
+    <path d="M162 140 C166 148 164 158 158 164"/>
+  </g>
+  <!-- the fillet: a red band, its ties hanging behind -->
+  <path fill="none" stroke="url(#il-crest)" stroke-width="4.5" stroke-linecap="round" d="M91 101 C108 86 134 76 163 76"/>
+  <path fill="none" stroke="url(#il-crest)" stroke-width="3.5" stroke-linecap="round" d="M91 101 C86 110 82 116 76 122 M92 103 C91 112 89 120 86 128"/>
+  <path fill="#FFF1CC" opacity="0.35" d="M60 92 A74 74 0 0 1 112 50 A80 80 0 0 0 66 98 Z"/>
