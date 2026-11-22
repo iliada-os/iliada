@@ -46,9 +46,10 @@ pub async fn run(cmd: AccountCmd) -> Result<()> {
     match cmd {
         AccountCmd::Status => match account::status(&files) {
             Status::SignedOut => {
-                println!("Not signed in. Sign in with: iliada account sign-in");
                 if account::default_server().is_none() {
-                    println!("(This computer has no Iliada account server set up yet; use --server.)");
+                    println!("Not signed in. Iliada accounts are coming soon.");
+                } else {
+                    println!("Not signed in. Sign in with: iliada account sign-in");
                 }
             }
             Status::NeedsKey { email } => {
@@ -117,7 +118,7 @@ pub async fn run(cmd: AccountCmd) -> Result<()> {
 async fn sign_in(files: &Files, server: Option<String>) -> Result<()> {
     let server = server
         .or_else(account::default_server)
-        .context("this computer has no Iliada account server set up; give one with --server")?;
+        .context("Iliada accounts aren't available yet. To use an account of your own, pass --server")?;
     let code = account::start_sign_in(&server).await?;
     eprintln!("To sign in this computer, open\n\n    {}\n", code.page());
     eprintln!("sign in there, and approve the code  {}\n", code.user_code);

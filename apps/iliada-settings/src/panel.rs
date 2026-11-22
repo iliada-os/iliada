@@ -110,7 +110,7 @@ impl Page {
 
     pub fn description(self) -> &'static str {
         match self {
-            Page::Account => "Sign in to back up your settings, encrypted",
+            Page::Account => "Your settings on a new computer",
             Page::Updates => "Iliada and app updates",
             Page::Backup => "Back up apps and settings to GitHub",
             Page::Tools => "Software for the terminal",

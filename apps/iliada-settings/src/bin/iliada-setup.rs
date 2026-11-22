@@ -1,7 +1,8 @@
 //! The Iliada Setup Assistant: runs on first login. Sign in to the Iliada
-//! account (settings come back, encrypted backups go on), restore apps and
-//! settings from a GitHub backup, or start fresh: choose the first apps
-//! (they install in the background) and turn backups on.
+//! account when that is on (settings come back, encrypted backups go on);
+//! otherwise a short "coming soon" note. Then restore apps and settings
+//! from a GitHub backup, or start fresh: choose the first apps (they
+//! install in the background) and turn backups on.
 //!
 //!   iliada-setup              always opens
 //!   iliada-setup --first-run  opens only if setup hasn't been completed
@@ -39,7 +40,7 @@ fn main() -> cosmic::iced::Result {
 #[derive(Debug, Clone, PartialEq)]
 enum Step {
     Welcome,
-    /// Sign in to the Iliada account (when this computer has one set up).
+    /// Sign in to the Iliada account, or a coming-soon note when sign-in is off.
     Account,
     /// Restore a backup or start fresh.
     Choice,
@@ -405,9 +406,6 @@ impl cosmic::Application for App {
             Message::Go(step) => {
                 self.error = None;
                 if step == Step::Account {
-                    if !self.account.available() {
-                        return self.update(Message::Go(Step::Choice));
-                    }
                     self.step = step;
                     return self.account.refresh().map(account_action);
                 }
@@ -555,21 +553,29 @@ impl cosmic::Application for App {
                 vec![widget::button::suggested("Continue").on_press(Message::Go(Step::Account)).into()],
             ),
             Step::Account => {
+                let coming_soon = self.account.coming_soon();
                 let next = if self.account.in_flow() {
                     None
-                } else if self.account.signed_in() {
+                } else if coming_soon || self.account.signed_in() {
                     Some(widget::button::suggested("Continue"))
                 } else {
                     Some(widget::button::standard("Not now"))
                 };
-                self.page(
-                    "Your Iliada account",
+                let body = if coming_soon {
+                    "Iliada accounts are coming soon. They'll remember your settings and bring them to a new \
+                     computer. Until then, you can back up to GitHub in a moment."
+                } else {
                     "Sign in to keep your desktop settings, Privacy answers and conversations with Homer \
-                     backed up, encrypted so only you can read them. New here? Signing in makes your account.",
-                    std::iter::once(self.account.view_setup().map(Message::Account))
-                        .chain(next.map(|b| b.on_press(Message::Go(Step::Choice)).into()))
-                        .collect(),
-                )
+                     backed up, encrypted so only you can read them. New here? Signing in makes your account."
+                };
+                let mut content: Vec<Element<_>> = Vec::new();
+                if !coming_soon {
+                    content.push(self.account.view_setup().map(Message::Account));
+                }
+                if let Some(b) = next {
+                    content.push(b.on_press(Message::Go(Step::Choice)).into());
+                }
+                self.page("Your Iliada account", body, content)
             }
             Step::Choice => self.page(
                 "Have you used Iliada before?",
