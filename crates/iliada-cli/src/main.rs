@@ -611,16 +611,39 @@ fn make_default_browser(name: &str) -> Result<()> {
         .or_else(|| std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".config")))
         .context("no home folder")?;
     let favorites = base.join("cosmic/com.system76.CosmicAppList/v1/favorites");
-    let current = std::fs::read_to_string(&favorites).or_else(|_| {
+    let original = std::fs::read_to_string(&favorites).or_else(|_| {
         std::fs::read_to_string("/run/current-system/sw/share/cosmic/com.system76.CosmicAppList/v1/favorites")
     })?;
-    if let Some(updated) = with_in_dock(&current, file.trim_end_matches(".desktop")) {
+    let migrated = migrate_old_settings_dock(&original).unwrap_or_else(|| original.clone());
+    let updated = with_in_dock(&migrated, file.trim_end_matches(".desktop")).unwrap_or(migrated);
+    if updated != original {
         if let Some(dir) = favorites.parent() {
             std::fs::create_dir_all(dir)?;
         }
         std::fs::write(&favorites, updated)?;
     }
     Ok(())
+}
+
+/// Since 0.2.6 Settings is COSMIC Settings. Docks from before still name
+/// `org.iliada.Settings`; point them at the new app (or drop the old id if
+/// the new one is already there). `None` when nothing to change.
+fn migrate_old_settings_dock(favorites: &str) -> Option<String> {
+    if !favorites.contains("\"org.iliada.Settings\"") {
+        return None;
+    }
+    if favorites.contains("\"com.system76.CosmicSettings\"") {
+        let mut out = Vec::new();
+        for line in favorites.lines() {
+            if line.contains("\"org.iliada.Settings\"") {
+                continue;
+            }
+            out.push(line.to_owned());
+        }
+        Some(out.join("\n") + "\n")
+    } else {
+        Some(favorites.replace("\"org.iliada.Settings\"", "\"com.system76.CosmicSettings\""))
+    }
 }
 
 /// The dock's favorites list (COSMIC's RON list of launcher ids) with `id`
@@ -1101,6 +1124,23 @@ mod tests {
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn old_docks_point_settings_at_cosmic_settings() {
+        let old = "[\n    \"com.system76.CosmicFiles\",\n    \"org.iliada.Settings\",\n    \"org.iliada.Store\",\n]\n";
+        assert_eq!(
+            migrate_old_settings_dock(old).unwrap(),
+            "[\n    \"com.system76.CosmicFiles\",\n    \"com.system76.CosmicSettings\",\n    \"org.iliada.Store\",\n]\n"
+        );
+        let both = "[\n    \"org.iliada.Settings\",\n    \"com.system76.CosmicSettings\",\n]\n";
+        assert_eq!(migrate_old_settings_dock(both).unwrap(), "[\n    \"com.system76.CosmicSettings\",\n]\n");
+        let last = "[\n    \"org.iliada.Store\",\n    \"org.iliada.Settings\"\n]\n";
+        assert_eq!(
+            migrate_old_settings_dock(last).unwrap(),
+            "[\n    \"org.iliada.Store\",\n    \"com.system76.CosmicSettings\"\n]\n"
+        );
+        assert_eq!(migrate_old_settings_dock("[\n    \"com.system76.CosmicSettings\",\n]\n"), None);
     }
 
     #[test]

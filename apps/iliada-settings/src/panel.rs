@@ -77,7 +77,8 @@ impl Page {
         Page::About,
     ];
 
-    /// Stable id: `cosmic-settings iliada-<id>` opens the page.
+    /// Page id. COSMIC Settings opens it as two arguments: `iliada <id>`
+    /// (`cosmic-settings iliada updates`), not one glued name.
     pub fn id(self) -> &'static str {
         match self {
             Page::Account => "account",
@@ -1396,4 +1397,27 @@ impl Panel {
 
 fn account_action(m: account::Msg) -> cosmic::Action<Message> {
     cosmic::Action::App(Message::Account(m))
+}
+
+/// What `iliada-settings` hands to `cosmic-settings` so a page actually opens.
+/// A single argument `iliada-updates` is refused (0.2.6).
+pub fn cosmic_settings_args(page: Page) -> [&'static str; 2] {
+    ["iliada", page.id()]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cosmic_settings_takes_iliada_then_the_page() {
+        assert_eq!(cosmic_settings_args(Page::Updates), ["iliada", "updates"]);
+        assert_eq!(cosmic_settings_args(Page::Assistant), ["iliada", "homer"]);
+        for p in Page::ALL {
+            let [group, id] = cosmic_settings_args(p);
+            assert_eq!(group, "iliada");
+            assert_eq!(id, p.id());
+            assert_ne!(format!("iliada-{id}").as_str(), "iliada", "0.2.6 passed one glued argument");
+        }
+    }
 }

@@ -247,11 +247,11 @@ in
           done
         done
         # One Settings app since 0.2.6: docks from before point at the old
-        # entry (it still opens Settings); show the new one in its place.
+        # entry. Same replacements as migrate_old_settings_dock (iliada-cli).
         fav=$base/com.system76.CosmicAppList/v1/favorites
         if [ -f "$fav" ] && grep -q '"org.iliada.Settings"' "$fav"; then
           if grep -q '"com.system76.CosmicSettings"' "$fav"; then
-            sed -i '/"org.iliada.Settings",\{0,1\}$/d' "$fav"
+            grep -v '"org.iliada.Settings"' "$fav" > "$fav.new" && mv "$fav.new" "$fav"
           else
             sed -i 's/"org.iliada.Settings"/"com.system76.CosmicSettings"/' "$fav"
           fi

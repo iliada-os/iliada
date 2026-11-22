@@ -2,21 +2,22 @@
 
 ## Unreleased
 
-- **Iliada accounts are coming soon**: sign-in is off for now (the account
-  service isn't hosted yet). Setup Assistant and Settings → Account say so
-  in plain words, instead of offering a sign-in that can't work. Turn it
-  back on later by setting `iliada.account.server` to
-  `https://account.iliada-os.com` (one line). Computers already signed in
-  keep their account and hourly backup.
-- **A smaller USB image**: the live session drops the bundled Firefox, the
-  extra spoken voices (mbrola), and firmware that isn't for common PC
-  hardware (phones, servers, NVIDIA). Wi-Fi and Intel/AMD graphics stay.
-  Installed systems keep a Document Reader that can read English, Greek,
-  French, German and Spanish (other languages were a gigabyte); more can
-  be added later.
+## 0.2.7 (2026-11-22)
 
+- **Fixed: Settings links in 0.2.6** did nothing: the update notice, Homer's
+  Settings button and the Settings icon in docks from before 0.2.6. Those
+  docks now show the new Settings icon.
+- **A new computer gets your account key from one already signed in**: no
+  need to type the recovery key. On the new computer, Settings → Iliada
+  account → "Ask another computer" shows a code; on a computer already
+  signed in, Settings → Iliada account shows the request with the same code
+  and Approve. The key travels sealed for that one computer (the account
+  server only passes it on and can't read it), and the matching codes catch
+  anyone in the middle. Also `iliada account get-key` / `give-key`.
+- **Bitwarden** in the Store: the desktop app, built from Bitwarden's own
+  package (the Store's first app that Debian doesn't carry).
 - **Homer sounds a little like Homer**: a short Homeric line to open a
-  conversation (\"Sing, O Muse, of the photos set in order!\"), the odd
+  conversation ("Sing, O Muse, of the photos set in order!"), the odd
   wine-dark sea, and plain words after that, or when something went wrong.
   His voice is a text file you can change: Settings → Homer → Homer's
   voice → Edit (delete it to go back).
@@ -35,21 +36,18 @@
   not yet checked in a VM.)*
 - **A new computer greets you in the Iliad look**: the login screen showed
   COSMIC's nebula and colours until someone had signed in once.
-
-## 0.2.7 (2026-11-21)
-
-- **Fixed: Settings links in 0.2.6** did nothing: the update notice, Homer's
-  Settings button and the Settings icon in docks from before 0.2.6. Those
-  docks now show the new Settings icon.
-- **A new computer gets your account key from one already signed in**: no
-  need to type the recovery key. On the new computer, Settings → Iliada
-  account → "Ask another computer" shows a code; on a computer already
-  signed in, Settings → Iliada account shows the request with the same code
-  and Approve. The key travels sealed for that one computer (the account
-  server only passes it on and can't read it), and the matching codes catch
-  anyone in the middle. Also `iliada account get-key` / `give-key`.
-- **Bitwarden** in the Store: the desktop app, built from Bitwarden's own
-  package (the Store's first app that Debian doesn't carry).
+- **Iliada accounts are coming soon**: sign-in is off for now (the account
+  service isn't hosted yet). Setup Assistant and Settings → Account say so
+  in plain words, instead of offering a sign-in that can't work. Turn it
+  back on later by setting `iliada.account.server` to
+  `https://account.iliada-os.com` (one line). Computers already signed in
+  keep their account and hourly backup.
+- **A smaller USB image**: the live session drops the bundled Firefox, the
+  extra spoken voices (mbrola), and firmware that isn't for common PC
+  hardware (phones, servers, NVIDIA). Wi-Fi and Intel/AMD graphics stay.
+  Installed systems keep a Document Reader that can read English, Greek,
+  French, German and Spanish (other languages were a gigabyte); more can
+  be added later.
 
 ## 0.2.6 (2026-11-20)
 
