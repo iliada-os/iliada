@@ -986,6 +986,7 @@ version = "0.2.7"
 dependencies = [
  "anyhow",
  "clap",
+ "flate2",
  "iliada-applist",
  "iliada-bundle",
  "iliada-types",

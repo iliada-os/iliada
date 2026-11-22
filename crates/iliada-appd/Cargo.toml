@@ -16,6 +16,7 @@ iliada-bundle.workspace = true
 iliada-types.workspace = true
 iliada-applist.workspace = true
 serde_json.workspace = true
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
