@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Iliada accounts are coming soon**: sign-in is off for now (the account
+  service isn't hosted yet). Setup Assistant and Settings → Account say so
+  in plain words, instead of offering a sign-in that can't work. Turn it
+  back on later by setting `iliada.account.server` to
+  `https://account.iliada-os.com` (one line). Computers already signed in
+  keep their account and hourly backup.
+
 - **Homer sounds a little like Homer**: a short Homeric line to open a
   conversation (\"Sing, O Muse, of the photos set in order!\"), the odd
   wine-dark sea, and plain words after that, or when something went wrong.

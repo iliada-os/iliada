@@ -127,9 +127,16 @@ fn text_err(e: anyhow::Error) -> String {
 }
 
 impl Account {
-    /// Whether this computer can use an Iliada account at all.
+    /// Whether this computer can use an Iliada account at all (sign in, or
+    /// already signed in from before).
     pub fn available(&self) -> bool {
         self.server.is_some() || self.status != Status::SignedOut
+    }
+
+    /// Sign-in is off and this person isn't already signed in: show that
+    /// accounts are coming soon, not a broken sign-in.
+    pub fn coming_soon(&self) -> bool {
+        !self.available()
     }
 
     pub fn signed_in(&self) -> bool {
@@ -416,11 +423,15 @@ impl Account {
         if let Some(b) = self.banner() {
             items.push(b);
         }
-        if !self.available() {
+        if self.coming_soon() {
             items.push(
                 settings::section()
                     .title("Iliada account")
-                    .add(info("Not available yet", "This computer isn't set up with an Iliada account server."))
+                    .add(info(
+                        "Coming soon",
+                        "Iliada accounts will remember your settings and bring them to a new computer. \
+                         They're not ready yet. Until then, you can back up to GitHub in Settings → Backup.",
+                    ))
                     .into(),
             );
             return settings::view_column(items).into();

@@ -37,8 +37,8 @@ pub const COMPUTER: &str = "computer";
 /// Where Iliada keeps a computer's configuration.
 pub const SYSTEM_DIR: &str = "/etc/iliada";
 
-/// The server this computer uses, if Iliada was set up with one
-/// (`ILIADA_ACCOUNT_SERVER`, set by `iliada.account.server`).
+/// The server this computer uses, if sign-in is on
+/// (`ILIADA_ACCOUNT_SERVER`, set by `iliada.account.server`; off by default).
 pub fn default_server() -> Option<String> {
     std::env::var("ILIADA_ACCOUNT_SERVER").ok().filter(|s| !s.trim().is_empty())
 }
