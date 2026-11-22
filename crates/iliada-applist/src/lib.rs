@@ -4,12 +4,12 @@
 //!
 //! | keys | meaning | who installs/updates it |
 //! |---|---|---|
-//! | `store = "<catalog id>"` | from the Iliada Store | `iliada-store sync` (download) |
+//! | `store = "<catalog id>"` | from agora | `iliada-store sync` (download) |
 //! | `debian = "<pkg>"` / `url = "<deb>"` | custom translation | `iliada-ingest serve` (local) |
 //! | `manual = true` | dragged in by hand | nobody (recorded only) |
 //!
 //! plus `id` (the installed bundle's app id) and `name`. Several programs edit
-//! this file (the Store, `iliada-appd`, the `iliada` command), so every edit
+//! this file (agora, `iliada-appd`, the `iliada` command), so every edit
 //! takes an exclusive lock, and the file is edited with `toml_edit` so the
 //! user's comments and layout survive.
 
@@ -73,7 +73,7 @@ pub fn edit(path: &Path, f: impl FnOnce(&mut ArrayOfTables) -> Result<bool>) -> 
     Ok(changed)
 }
 
-/// Record that the Store installed `app_id` (catalog id `store_id`). An
+/// Record that agora installed `app_id` (catalog id `store_id`). An
 /// existing entry for the same app is converted to a Store entry.
 pub fn record_store_install(path: &Path, app_id: &str, name: &str, store_id: &str) -> Result<bool> {
     edit(path, |aot| {

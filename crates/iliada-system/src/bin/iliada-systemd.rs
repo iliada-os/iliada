@@ -538,7 +538,7 @@ impl Service {
     }
 }
 
-/// The app list stays writable by the Store and the app service.
+/// The app list stays writable by agora and the app service.
 fn fix_app_list(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
     let group = std::fs::read_to_string("/etc/group").unwrap_or_default();

@@ -65,7 +65,7 @@ GitHub release); see **[Releasing](docs/install.md#releasing)**.
 
 **[docs/using.md](docs/using.md)**: how to install an app, Python or a
 service, update, back up, and use the assistant. In short: apps, software
-and services are all in the **Store**; in a terminal, `iliada install
+and services are all in **agora**; in a terminal, `iliada install
 firefox`, `iliada install python` and `iliada install ssh` do the same.
 
 ## Repository layout
@@ -82,10 +82,10 @@ crates/
   iliada-appd      exports GUI bundles to the desktop; records installs in apps.toml
   iliada-applist   locked, comment-preserving edits of apps.toml
   iliada-catalog   app catalog format, signatures, and the catalog builder
-  iliada-store     the Store engine + CLI (bin: iliada-store)
+  iliada-store     agora's engine + CLI (bin: iliada-store)
   iliada-cli       the `iliada` command
 apps/
-  iliada-store-gui the Store (COSMIC GUI)
+  iliada-store-gui agora (COSMIC GUI)
 nix/
   modules/         the declarative system manifest (iliada.* NixOS options)
   hosts/           dev-vm, appliance (immutable image) and installer ISO
@@ -107,7 +107,7 @@ cargo test --workspace
 cargo xtask ci                       # fmt + clippy -D warnings + tests
 
 # On an installed Iliada
-iliada list                     # everything in the Store
+iliada list                     # everything in agora
 iliada install firefox          # install an app (.app, sandboxed)
 iliada install python           # software for the terminal (system-wide)
 iliada install ssh              # turn on a service

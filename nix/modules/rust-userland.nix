@@ -77,13 +77,13 @@ in
     programs.fish.interactiveShellInit = ''
       function fish_command_not_found
           printf "%s isn't installed.\n" $argv[1] >&2
-          printf "Add command-line software in the Store (Software), or with: iliada tool add <name>\n" >&2
+          printf "Add command-line software in agora (Software), or with: iliada tool add <name>\n" >&2
       end
     '';
     programs.bash.interactiveShellInit = ''
       command_not_found_handle() {
           printf "%s isn't installed.\n" "$1" >&2
-          printf "Add command-line software in the Store (Software), or with: iliada tool add <name>\n" >&2
+          printf "Add command-line software in agora (Software), or with: iliada tool add <name>\n" >&2
           return 127
       }
     '';

@@ -94,7 +94,7 @@ sudo nixos-rebuild switch --flake /etc/iliada#iliada
 
 | | |
 |---|---|
-| `iliada list` · `iliada search <word>` | everything in the Store: apps, software, services |
+| `iliada list` · `iliada search <word>` | everything in agora: apps, software, services |
 | `iliada install firefox` · `iliada remove firefox` | install / remove an app (no password, no rebuild) |
 | `iliada install python` · `iliada install ssh` | software for the terminal, or turn on a service (`remove` undoes) |
 | `iliada update` | update apps, and install any on your list that are missing |
@@ -133,7 +133,7 @@ client ID, or `null` to turn backups off).
 
 Apps are `.app`s. Command-line software (Python, Node.js, ffmpeg…) and
 background services (nginx, PostgreSQL, MariaDB, Redis, Docker, SSH,
-printing) are not: they are part of the system. Find them in the Store
+printing) are not: they are part of the system. Find them in agora
 under **Software** and **Services** (labeled as such), or use
 `iliada install python` / `iliada install nginx`. Any other nixpkgs
 package works with `iliada tool add <name>`. They are recorded in `settings.toml`
@@ -147,7 +147,7 @@ API key. Then ask in the **Assistant** app, or `iliada ask "…"`.
 
 ### Apps (no rebuild, no terminal)
 
-* **Install:** open the **Store** (in the dock) and click **Get**, or drag an
+* **Install:** open **agora** (in the dock) and click **Get**, or drag an
   `.app` into Applications. It appears in the launcher within seconds. Apps
   are only ever `.app` bundles; there are no other package formats.
 * **Uninstall:** drag the app to the Trash.
@@ -172,7 +172,7 @@ virtual machine.
 | `iliada.workstation.enable` | follows `desktop.enable` | networking, audio, bluetooth, firmware |
 | `iliada.applications.list` | `/etc/iliada/apps.toml` | the app list (mutable, maintained automatically) |
 | `iliada.settingsFile` | `./settings.toml` | tools and services (see above) |
-| `iliada.store.catalog` | Iliada's catalog | where the Store gets apps (signed) |
+| `iliada.store.catalog` | Iliada's catalog | where agora gets apps (signed) |
 | `iliada.store.updateInterval` | `"6h"` | how often apps are updated |
 | `iliada.isolation.defaultTier` | `"namespace"` | `namespace` (native speed) or `micro-vm` |
 | `iliada.isolation.highSecurity` | `false` | every app in its own micro-VM (slower, strongest) |

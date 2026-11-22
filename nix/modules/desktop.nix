@@ -111,7 +111,7 @@ in
       })
     ];
     services.desktopManager.cosmic.enable = true;
-    # Apps come only as .app bundles: the Iliada Store replaces COSMIC Store
+    # Apps come only as .app bundles: agora replaces COSMIC Store
     # (which installs Flatpaks and system packages). Iliada's Setup Assistant
     # replaces COSMIC's first-login wizard.
     environment.cosmic.excludePackages = [ pkgs.cosmic-store ]
@@ -122,11 +122,11 @@ in
     environment.systemPackages = [
       # Notifications from scripts and the Setup Assistant's background installs.
       pkgs.libnotify
-      # The Store, Iliada Settings and the Setup Assistant.
+      # agora, Iliada Settings and the Setup Assistant.
       desktopApps
       wallpaper
       # Iliada's desktop defaults (users can still change them): Applications
-      # in the Files sidebar; the Iliada Store in the dock; the Iliad look.
+      # in the Files sidebar; agora in the dock; the Iliad look.
       # hiPrio: they replace COSMIC's own defaults for the same settings.
       (lib.hiPrio (pkgs.runCommand "iliada-cosmic-defaults" { } ''
         # The Iliad look: bronze on navy (dark), deep bronze on parchment
@@ -185,7 +185,7 @@ in
         cat > $dock/favorites <<'EOF'
         [
             "com.system76.CosmicFiles",
-            "org.iliada.Store",
+            "org.iliada.Agora",
             "org.iliada.Assistant",
             "com.system76.CosmicSettings",
             "com.system76.CosmicEdit",
@@ -246,14 +246,23 @@ in
             fi
           done
         done
-        # One Settings app since 0.2.6: docks from before point at the old
-        # entry. Same replacements as migrate_old_settings_dock (iliada-cli).
+        # Dock ids that changed with an Iliada update. Same replacements as
+        # migrate_dock (iliada-cli): Settings since 0.2.6, agora after that.
         fav=$base/com.system76.CosmicAppList/v1/favorites
-        if [ -f "$fav" ] && grep -q '"org.iliada.Settings"' "$fav"; then
-          if grep -q '"com.system76.CosmicSettings"' "$fav"; then
-            grep -v '"org.iliada.Settings"' "$fav" > "$fav.new" && mv "$fav.new" "$fav"
-          else
-            sed -i 's/"org.iliada.Settings"/"com.system76.CosmicSettings"/' "$fav"
+        if [ -f "$fav" ]; then
+          if grep -q '"org.iliada.Settings"' "$fav"; then
+            if grep -q '"com.system76.CosmicSettings"' "$fav"; then
+              grep -v '"org.iliada.Settings"' "$fav" > "$fav.new" && mv "$fav.new" "$fav"
+            else
+              sed -i 's/"org.iliada.Settings"/"com.system76.CosmicSettings"/' "$fav"
+            fi
+          fi
+          if grep -q '"org.iliada.Store"' "$fav"; then
+            if grep -q '"org.iliada.Agora"' "$fav"; then
+              grep -v '"org.iliada.Store"' "$fav" > "$fav.new" && mv "$fav.new" "$fav"
+            else
+              sed -i 's/"org.iliada.Store"/"org.iliada.Agora"/' "$fav"
+            fi
           fi
         fi
       '';

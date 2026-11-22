@@ -1,10 +1,10 @@
 # System settings for this computer.
 #
-# Change them in the Store and Settings, with the `iliada` command
+# Change them in agora and Settings, with the `iliada` command
 # (`iliada install python`, `iliada install ssh`; `systemctl enable sshd` works
 # too), or edit this file and run `iliada system apply`. Every change is
 # recorded (`iliada history`) and backed up.
-# Apps are not here: they are .app bundles (see apps.toml and the Store).
+# Apps are not here: they are .app bundles (see apps.toml and agora).
 
 [tools]
 # Command-line tools, installed system-wide (names as in nixpkgs).

@@ -92,7 +92,7 @@ struct App {
     /// The step to return to after an error.
     back: Step,
     account: Account,
-    /// The "Choose your apps" page: None while the Store is asked.
+    /// The "Choose your apps" page: None while agora is asked.
     picks: Option<Result<Vec<Pick>, String>>,
     /// Names of the ticked apps.
     picked: BTreeSet<String>,
@@ -515,7 +515,7 @@ impl cosmic::Application for App {
             }
             Message::InstallApps => {
                 let mut names = self.chosen();
-                // Chrome is built on this computer: after the quick Store downloads.
+                // Chrome is built on this computer: after the quick agora downloads.
                 names.sort_by_key(|n| n == "Google Chrome");
                 if !names.is_empty() {
                     if let Err(e) = install_in_background(&names) {
@@ -548,7 +548,7 @@ impl cosmic::Application for App {
         match &self.step {
             Step::Welcome => self.page(
                 "Welcome to Iliada",
-                "Apps are in Applications, each in its own sandbox. Get more from the Store; \
+                "Apps are in Applications, each in its own sandbox. Get more from agora; \
                  install one by dragging it into Applications, remove it by dragging it to the Trash.",
                 vec![widget::button::suggested("Continue").on_press(Message::Go(Step::Account)).into()],
             ),
@@ -645,14 +645,14 @@ impl cosmic::Application for App {
                 match &self.picks {
                     None => {
                         content.push(widget::progress_bar::circular::Circular::new().size(24.0).into());
-                        content.push(widget::text::caption("Looking in the Store…").into());
+                        content.push(widget::text::caption("Looking in agora…").into());
                         content.push(widget::button::text("Skip").on_press(Message::Go(Step::NameBackup)).into());
                     }
                     Some(Err(_)) => {
                         content.push(
                             widget::text::body(
-                                "The Store can't be reached right now (is the internet connected?). \
-                                 Get apps from the Store in the dock any time.",
+                                "agora can't be reached right now (is the internet connected?). \
+                                 Get apps from agora in the dock any time.",
                             )
                             .into(),
                         );
@@ -702,7 +702,7 @@ impl cosmic::Application for App {
                 self.page_with(
                     "Choose your apps",
                     "Pick what you'd like to start with. Each app comes sandboxed and sees only what you allow. \
-                     The Store has more.",
+                     agora has more.",
                     content,
                     760.0,
                 )
@@ -758,7 +758,7 @@ impl cosmic::Application for App {
                 }
                 content.push(widget::text::caption("Change these any time in Settings.").into());
                 content.push(widget::button::suggested("Start using Iliada").on_press(Message::Finish).into());
-                self.page("You're all set", "Find apps in Applications and the Store, both in the dock.", content)
+                self.page("You're all set", "Find apps in Applications and agora, both in the dock.", content)
             }
         }
     }
@@ -786,7 +786,7 @@ mod tests {
         let installed = BTreeSet::from(["VLC".to_owned()]);
         let p = picks(&apps, &installed, "x86_64");
         let names: Vec<_> = p.iter().map(|p| p.name.as_str()).collect();
-        // In the page's order; Chrome is offered on Intel/AMD even though it isn't in the Store.
+        // In the page's order; Chrome is offered on Intel/AMD even though it isn't in agora.
         assert_eq!(names, ["Firefox", "Google Chrome", "VLC"]);
         // Chrome is the ticked browser on Intel/AMD; Firefox is offered.
         assert!(p[0].browser && !p[0].default && !p[0].installed);

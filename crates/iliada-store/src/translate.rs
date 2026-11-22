@@ -1,4 +1,4 @@
-//! Apps that aren't in the Iliada Store yet: Iliada builds them from
+//! Apps that aren't in agora yet: Iliada builds them from
 //! Debian's package on this computer (the Package Translator,
 //! `iliada-ingest serve`), as an ordinary sandboxed `.app`.
 //!
@@ -95,7 +95,7 @@ pub fn request(app_list: &Path, package: &str) -> Result<bool> {
 }
 
 /// An app Iliada builds on this computer from its maker's own download,
-/// because its licence doesn't let the Store hand out copies. The app list
+/// because its licence doesn't let agora hand out copies. The app list
 /// keeps it updated from the same address.
 #[derive(Debug)]
 pub struct FromMaker {

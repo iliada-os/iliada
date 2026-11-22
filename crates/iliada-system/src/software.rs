@@ -1,4 +1,4 @@
-//! What the Store offers besides apps: **software** (command-line programs,
+//! What agora offers besides apps: **software** (command-line programs,
 //! installed system-wide from nixpkgs: Python, Node.js, ffmpeg…) and
 //! **services** (programs that run in the background: a web server, a
 //! database). Neither is an `.app`: they are part of the system, installed

@@ -1,4 +1,4 @@
-# Iliada's desktop apps: the Store, Settings, the Setup Assistant and the
+# Iliada's desktop apps: agora, Settings, the Setup Assistant and the
 # installer. One
 # cargo workspace (apps/), built separately from the core tools because it
 # depends on libcosmic (git dependencies, GPU rendering stack).
@@ -45,19 +45,21 @@ rustPlatform.buildRustPackage {
     EOS
     chmod +x $out/bin/iliada-ask
     install -Dm644 -t $out/share/applications \
-      apps/iliada-store-gui/res/org.iliada.Store.desktop \
+      apps/iliada-store-gui/res/org.iliada.Agora.desktop \
       apps/iliada-settings/res/org.iliada.Settings.desktop \
       apps/iliada-settings/res/org.iliada.Setup.desktop \
       apps/iliada-settings/res/org.iliada.Assistant.desktop
-    # Their icons (nix/branding/README.md): the Store's agora, Homer's coin,
+    # Their icons (nix/branding/README.md): agora's stoa, Homer's coin,
     # the Settings gear, the Setup Assistant's wreath, the installer's ship.
     install -Dm644 -t $out/share/icons/hicolor/scalable/apps apps/*/res/org.iliada.*.svg
+    # Docks from before the rename still look up the old icon name.
+    ln -s org.iliada.Agora.svg $out/share/icons/hicolor/scalable/apps/org.iliada.Store.svg
     # The installer's entries are only linked in on the live system.
     install -Dm644 -t $out/share/iliada/installer apps/iliada-installer/res/*.desktop
   '';
 
   meta = {
-    description = "Iliada's desktop apps: Store, Settings, Setup Assistant";
+    description = "Iliada's desktop apps: agora, Settings, Setup Assistant";
     license = with lib.licenses; [ mit asl20 ];
     platforms = lib.platforms.linux;
     mainProgram = "iliada-store-gui";

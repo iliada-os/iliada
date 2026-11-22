@@ -1,8 +1,8 @@
 //! Which desktop apps Debian has: its AppStream data (DEP-11
 //! `Components-<arch>.yml`), the same list GNOME Software and KDE Discover
 //! show. The translator keeps a compact copy (`debian-apps.json` in its
-//! cache folder, readable by everyone) so the Store, the `iliada` command
-//! and the assistant can offer apps that aren't in the Iliada Store yet.
+//! cache folder, readable by everyone) so agora, the `iliada` command
+//! and the assistant can offer apps that aren't in agora yet.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;

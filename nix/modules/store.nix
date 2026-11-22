@@ -1,5 +1,5 @@
-# The Iliada Store: where the catalog is, and the background job that keeps
-# Store apps installed and up to date.
+# agora: where the catalog is, and the background job that keeps
+# agora apps installed and up to date.
 { config, lib, ... }:
 let
   cfg = config.iliada.store;
@@ -11,7 +11,7 @@ in
       type = lib.types.bool;
       default = apps.enable;
       defaultText = lib.literalExpression "config.iliada.applications.enable";
-      description = "The Iliada Store and automatic app updates.";
+      description = "agora and automatic app updates.";
     };
     catalog = lib.mkOption {
       type = lib.types.str;
@@ -39,7 +39,7 @@ in
 
     # Installs apps on the app list that are missing (restores) and updates the rest.
     systemd.services.iliada-store-sync = {
-      description = "Iliada Store: install and update apps";
+      description = "agora: install and update apps";
       wants = [ "network-online.target" ];
       after = [ "network-online.target" ];
       serviceConfig = {
