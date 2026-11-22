@@ -12,6 +12,7 @@
 //! and MIME registration here.
 
 pub mod applist;
+pub mod icon;
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -95,7 +96,7 @@ pub fn is_gui(b: &Bundle) -> bool {
     has_entry || !b.info.categories.is_empty()
 }
 
-pub fn desktop_entry(b: &Bundle, iliada_run: &Path) -> String {
+pub fn desktop_entry(b: &Bundle, iliada_run: &Path, icon: Option<&Path>) -> String {
     let mut out = String::from("[Desktop Entry]\nType=Application\n");
     out += &format!("Name={}\n", value(&b.info.name));
     out += &format!(
@@ -104,11 +105,8 @@ pub fn desktop_entry(b: &Bundle, iliada_run: &Path) -> String {
         exec_quote(&iliada_run.display().to_string()),
         exec_quote(&b.layout.root().display().to_string())
     );
-    if let Some(icon) = &b.info.icon {
-        let p = b.layout.contents().join(icon);
-        if p.is_file() {
-            out += &format!("Icon={}\n", value(&p.display().to_string()));
-        }
+    if let Some(p) = icon.filter(|p| p.is_file()) {
+        out += &format!("Icon={}\n", value(&p.display().to_string()));
     }
     let up = upstream_entry(b);
     for (key, v) in [
@@ -139,11 +137,19 @@ pub struct SyncReport {
 }
 
 /// Make `<export>/applications` mirror the GUI bundles in `apps`.
+/// Third-party icons are wrapped onto Iliada's navy tile under
+/// `<export>/icons/`.
 pub fn sync(apps: &Path, export: &Path, iliada_run: &Path) -> Result<SyncReport> {
     let dir = export.join("applications");
+    let theme_icons = export.join("icons/hicolor/scalable/apps");
+    let bundle_icons = export.join("icons/app-bundles");
     fs::create_dir_all(&dir)?;
+    fs::create_dir_all(&theme_icons)?;
+    fs::create_dir_all(&bundle_icons)?;
     let mut report = SyncReport::default();
     let mut keep = BTreeSet::new();
+    let mut keep_theme = BTreeSet::new();
+    let mut keep_bundle = BTreeSet::new();
     let mut bundles: Vec<PathBuf> = fs::read_dir(apps)
         .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "app")).collect())
         .unwrap_or_default();
@@ -153,8 +159,9 @@ pub fn sync(apps: &Path, export: &Path, iliada_run: &Path) -> Result<SyncReport>
         if !is_gui(&b) {
             continue;
         }
+        let icon = export_icon(&b, &path, &theme_icons, &bundle_icons, &mut keep_theme, &mut keep_bundle)?;
         let file = format!("{PREFIX}{}.desktop", b.info.id);
-        let text = desktop_entry(&b, iliada_run);
+        let text = desktop_entry(&b, iliada_run, icon.as_deref());
         let target = dir.join(&file);
         if fs::read_to_string(&target).ok().as_deref() != Some(text.as_str()) {
             let tmp = dir.join(format!(".{file}.tmp"));
@@ -171,7 +178,58 @@ pub fn sync(apps: &Path, export: &Path, iliada_run: &Path) -> Result<SyncReport>
             report.removed.push(name);
         }
     }
+    sweep_icons(&theme_icons, &keep_theme)?;
+    sweep_icons(&bundle_icons, &keep_bundle)?;
     Ok(report)
+}
+
+fn export_icon(
+    b: &Bundle,
+    bundle: &Path,
+    theme_icons: &Path,
+    bundle_icons: &Path,
+    keep_theme: &mut BTreeSet<String>,
+    keep_bundle: &mut BTreeSet<String>,
+) -> Result<Option<PathBuf>> {
+    let Some(src) = b.info.icon.as_ref().map(|i| b.layout.contents().join(i)).filter(|p| p.is_file()) else {
+        return Ok(None);
+    };
+    let Some(bundle_name) = bundle.file_name().map(|n| format!("{}.svg", n.to_string_lossy())) else {
+        return Ok(Some(src));
+    };
+    let theme_name = format!("{PREFIX}{}.svg", b.info.id);
+    let theme_dest = theme_icons.join(&theme_name);
+    let bundle_dest = bundle_icons.join(&bundle_name);
+    match icon::wrap_if_needed(&src) {
+        Some(svg) => {
+            keep_theme.insert(theme_name);
+            keep_bundle.insert(bundle_name);
+            write_if_changed(&theme_dest, &svg)?;
+            write_if_changed(&bundle_dest, &svg)?;
+            Ok(Some(theme_dest))
+        }
+        None => Ok(Some(src)),
+    }
+}
+
+fn write_if_changed(path: &Path, text: &str) -> Result<()> {
+    if fs::read_to_string(path).ok().as_deref() != Some(text) {
+        fs::write(path, text)?;
+    }
+    Ok(())
+}
+
+fn sweep_icons(dir: &Path, keep: &BTreeSet<String>) -> Result<()> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    for e in fs::read_dir(dir)?.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        if name.ends_with(".svg") && !keep.contains(&name) {
+            fs::remove_file(e.path())?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -228,7 +286,11 @@ mod tests {
         assert!(text.contains("Comment=Perform arithmetic\n"), "only [Desktop Entry] keys are copied");
         assert!(text.contains("Keywords=math;sum;"));
         assert!(text.contains("StartupWMClass=org.gnome.Calculator"), "window ↔ entry matching");
-        assert!(text.contains("Icon=") && text.contains("icon.svg"));
+        assert!(text.contains("Icon=") && text.contains("iliada-org.debian.gnome-calculator.svg"));
+        let tile = export.join("icons/hicolor/scalable/apps/iliada-org.debian.gnome-calculator.svg");
+        let svg = fs::read_to_string(&tile).unwrap();
+        assert!(svg.contains(icon::TILE_MARK), "third-party icons sit on the navy tile");
+        assert!(export.join("icons/app-bundles/Calculator.app.svg").is_file());
 
         // Idempotent.
         assert_eq!(sync(&apps, &export, run).unwrap(), SyncReport::default());
@@ -245,5 +307,26 @@ mod tests {
     fn exec_quoting_follows_the_spec() {
         assert_eq!(exec_quote("/Applications/Hello World.app"), "\"/Applications/Hello World.app\"");
         assert_eq!(exec_quote("a\"b$c"), "\"a\\\\\"b\\\\$c\"");
+    }
+
+    #[test]
+    fn already_tiled_icons_keep_their_path() {
+        let d = tempfile::tempdir().unwrap();
+        let (apps, export) = (d.path().join("Applications"), d.path().join("export"));
+        fs::create_dir_all(&apps).unwrap();
+        let calc = make(&apps, "Calculator", "org.debian.gnome-calculator", true);
+        fs::write(
+            BundleLayout::in_dir(&apps, "Calculator").resources().join("icon.svg"),
+            r#"<svg><clipPath id="iliada-tile"><path d="M0 0"/></clipPath></svg>"#,
+        )
+        .unwrap();
+        let run = Path::new("/run/current-system/sw/bin/iliada-run");
+        sync(&apps, &export, run).unwrap();
+        let text = fs::read_to_string(export.join("applications/iliada-org.debian.gnome-calculator.desktop")).unwrap();
+        assert!(
+            text.contains(&format!("Icon={}", calc.join("Contents/Resources/icon.svg").display())),
+            "Iliada tiles are not wrapped again: {text}"
+        );
+        assert!(!export.join("icons/hicolor/scalable/apps/iliada-org.debian.gnome-calculator.svg").exists());
     }
 }

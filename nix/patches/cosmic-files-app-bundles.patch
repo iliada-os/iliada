@@ -32,7 +32,7 @@ diff --git a/src/tab.rs b/src/tab.rs
 index d462c11..0769632 100644
 --- a/src/tab.rs
 +++ b/src/tab.rs
-@@ -591,6 +591,26 @@ fn get_desktop_file_icon(path: &Path) -> Option<String> {
+@@ -591,6 +591,34 @@ fn get_desktop_file_icon(path: &Path) -> Option<String> {
  
  /// Creates an icon handle from a desktop file's Icon field value.
  /// Supports both icon names (looked up in theme) and absolute paths (used directly).
@@ -42,8 +42,16 @@ index d462c11..0769632 100644
 +    path.extension().is_some_and(|e| e == "app") && path.join("Contents/Info.toml").is_file()
 +}
 +
-+/// Iliada: the bundle's own icon, or a generic application icon.
++/// Iliada: the navy-tile wrap `iliada-appd` wrote, the bundle's own icon,
++/// or a generic application icon.
 +fn app_bundle_icon(path: &Path, size: u16) -> widget::icon::Handle {
++    if let Some(name) = path.file_name() {
++        let wrapped = Path::new("/var/lib/iliada-desktop/icons/app-bundles")
++            .join(format!("{}.svg", name.to_string_lossy()));
++        if wrapped.is_file() {
++            return widget::icon::from_path(wrapped);
++        }
++    }
 +    for name in ["icon.svg", "icon.png"] {
 +        let icon = path.join("Contents/Resources").join(name);
 +        if icon.is_file() {
