@@ -1,7 +1,8 @@
 # The Iliada account on each computer (docs/account.md): which account server
 # people sign in to (Settings → Account, `iliada account`), and an hourly
-# backup of each signed-in person's settings, encrypted on the computer
-# before it is sent. People who haven't signed in are left alone.
+# backup of each signed-in person's settings and the computer's apps and
+# tools (also moments after those change), encrypted on the computer before
+# it is sent. People who haven't signed in are left alone.
 { config, lib, ... }:
 let
   cfg = config.iliada.account;
@@ -30,6 +31,15 @@ in
         ExecStart = "${pkg}/bin/iliada account backup --if-signed-in";
         Nice = 10;
       };
+    };
+    # The computer's apps and tools go to the account moments after they
+    # change, not only hourly (an unchanged backup uploads nothing).
+    systemd.user.paths.iliada-account-backup = {
+      wantedBy = [ "default.target" ];
+      pathConfig.PathChanged = [
+        "/etc/iliada/settings.toml"
+        "/etc/iliada/apps.toml"
+      ];
     };
     systemd.user.timers.iliada-account-backup = {
       wantedBy = [ "timers.target" ];

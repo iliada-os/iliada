@@ -41,7 +41,9 @@ pub enum Msg {
     Latest(Result<Option<Manifest>, String>),
     /// Ask first (the page's owner shows a dialog), then `Restore`.
     Restore,
-    Restored(Result<(Manifest, usize), String>),
+    /// The settings restored, and how bringing back the computer's apps and
+    /// tools went (`None`: nothing to bring back).
+    Restored(Result<(Manifest, Option<Result<String, String>>), String>),
     SignOut,
     SignedOut,
     Dismiss,
@@ -98,6 +100,20 @@ impl Default for Account {
             notice: None,
         }
     }
+}
+
+/// Bring back the computer's apps and command-line tools the account keeps,
+/// if they differ from this computer's (the system service asks for the
+/// administrator's password). `Ok`: the computer they came from.
+async fn restore_computer(files: &Files) -> Option<Result<String, String>> {
+    let setup = match account::computer_setup(files).await {
+        Ok(Some(s)) if !s.matches(&files.system) => s,
+        Ok(_) => return None,
+        Err(e) => return Some(Err(text_err(e))),
+    };
+    let from = setup.computer.clone();
+    let request = iliada_system::protocol::Request::RestoreSettings { settings: setup.settings, apps: setup.apps };
+    Some(iliada_system::client::call(&request, &mut |_| {}).await.map(|_| from).map_err(|e| format!("{e:#}")))
 }
 
 /// An error as a sentence for the page.
@@ -332,13 +348,27 @@ impl Account {
             Msg::Restore => {
                 self.busy = Some("Restoring");
                 self.error = None;
-                return Task::perform(async move { account::restore(&files).await.map_err(text_err) }, Msg::Restored);
+                return Task::perform(
+                    async move {
+                        let (m, _) = account::restore(&files).await.map_err(text_err)?;
+                        Ok((m, restore_computer(&files).await))
+                    },
+                    Msg::Restored,
+                );
             }
             Msg::Restored(r) => {
                 self.busy = None;
                 match r {
-                    Ok((m, _)) => {
-                        self.notice = Some(format!("Your settings from {} are back on this computer.", m.computer))
+                    Ok((m, apps)) => {
+                        let mut notice = format!("Your settings from {} are back on this computer.", m.computer);
+                        match apps {
+                            Some(Ok(from)) => {
+                                notice.push_str(&format!(" The apps and tools from {from} are installing."))
+                            }
+                            Some(Err(e)) => self.error = Some(format!("The apps and tools didn't come back: {e}")),
+                            None => {}
+                        }
+                        self.notice = Some(notice);
                     }
                     Err(e) => self.error = Some(format!("Couldn't restore: {e}")),
                 }

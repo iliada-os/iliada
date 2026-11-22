@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 iliada-system.workspace = true
+iliada-account.workspace = true
 iliada-store.workspace = true
 iliada-bundle.workspace = true
 iliada-types.workspace = true
