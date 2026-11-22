@@ -2,10 +2,6 @@
        a red fillet in his hair, a short neck centred under the head,
        draped shoulders on a small socle. -->
   <g transform="translate(128 127) scale(1.1) translate(-128 -133)">
-  <g fill="#040A1A" opacity="0.3" transform="translate(0 4)">
-    <path d="M58 200 C56 180 68 166 94 158 L114 154 V126 C98 122 92 112 92 100 C88 68 104 48 128 48 C152 48 168 68 164 100 C164 112 158 122 142 126 V154 L162 158 C188 164 200 180 198 200 C180 206 150 194 128 194 C106 194 76 206 58 200 Z"/>
-    <rect x="80" y="204" width="96" height="14" rx="4"/>
-  </g>
   <!-- socle and base -->
   <path fill="#A5671F" d="M110 190 H146 L154 208 H102 Z"/>
   <rect x="80" y="204" width="96" height="14" rx="4" fill="#8A5418"/>

@@ -228,7 +228,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import app_icons
 import cairosvg
 REPO = os.path.dirname(os.path.dirname(HERE))
-app_svgs = app_icons.generate(HERE, REPO, squircle, svg, tile_icon)
+app_svgs = app_icons.generate(HERE, REPO, squircle, svg, DEFS)
 
 B=OUT+'/'
 os.makedirs(B+'png/hicolor', exist_ok=True)

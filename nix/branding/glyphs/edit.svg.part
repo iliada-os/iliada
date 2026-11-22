@@ -1,5 +1,4 @@
-<rect x="58" y="64" width="140" height="144" rx="10" fill="#040A1A" opacity="0.3" transform="translate(0 4)"/>
-  <rect x="58" y="64" width="140" height="144" rx="10" fill="url(#il-bronze)"/>
+<rect x="58" y="64" width="140" height="144" rx="10" fill="url(#il-bronze)"/>
   <rect x="70" y="76" width="116" height="120" rx="4" fill="#2A1A14"/>
   <path fill="none" stroke="#C9A26A" stroke-width="5" stroke-linecap="round" opacity="0.85" d=" M84 102 H172 M84 122 H172 M84 142 H172 M84 162 H146"/>
   <g transform="rotate(38 172 168)">
