@@ -1,0 +1,264 @@
+# Publish an Iliada version: binary cache, signed update, GitHub release.
+# Runs only when a v* tag is pushed to iliada-os/iliada (or from the Actions
+# tab, naming that tag). Pull requests never run this. Secrets are used only
+# in this workflow, never echoed, and the key files are deleted afterwards.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing version tag to publish (v0.2.7)"
+        required: true
+        type: string
+      iso:
+        description: "Also build the installer ISO and upload it to R2 (10 GB free tier; nothing is deleted for you)"
+        required: false
+        type: boolean
+        default: false
+
+# Only what gh release create needs. No pull-request, id-token or packages.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    if: github.repository == 'iliada-os/iliada'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: write
+    steps:
+      - name: Free disk space
+        run: |
+          df -h
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /usr/local/.ghcup \
+            /usr/share/swift \
+            /usr/local/share/powershell \
+            /opt/hostedtoolcache
+          sudo docker system prune -af || true
+          df -h
+
+      - name: Add swap
+        run: |
+          sudo swapoff -a || true
+          sudo rm -f /swapfile
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
+      - name: Check the tag name
+        id: ver
+        env:
+          EVENT: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ github.event.inputs.tag }}
+          PUSH_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = workflow_dispatch ]; then
+            TAG=$DISPATCH_TAG
+          else
+            TAG=$PUSH_TAG
+          fi
+          case "$TAG" in
+            v*) ;;
+            *) echo "not a version tag: $TAG" >&2; exit 1 ;;
+          esac
+          VERSION=${TAG#v}
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ steps.ver.outputs.tag }}
+          persist-credentials: false
+
+      - name: VERSION must match the tag
+        run: |
+          set -euo pipefail
+          declared=$(tr -d '[:space:]' < VERSION)
+          test "$declared" = "${{ steps.ver.outputs.version }}" || {
+            echo "VERSION is $declared, tag is v${{ steps.ver.outputs.version }}" >&2
+            exit 1
+          }
+
+      - uses: cachix/install-nix-action@fd24c48048070c1be9acd18c9d369a83f0fe94d7 # v31.8.1
+        with:
+          github_access_token: ${{ github.token }}
+          extra_nix_config: |
+            extra-substituters = https://cache.iliada-os.com
+            extra-trusted-public-keys = cache.iliada-os.com-1:m3Nzs56JqFzorWcJP9N49LnaeHNyzdodpQE26xtwQXk=
+            filter-syscalls = false
+
+      - name: Write signing keys
+        env:
+          ILIADA_CATALOG_KEY: ${{ secrets.ILIADA_CATALOG_KEY }}
+          ILIADA_CACHE_KEY: ${{ secrets.ILIADA_CACHE_KEY }}
+        run: |
+          set -euo pipefail
+          set +x
+          umask 077
+          [ -n "${ILIADA_CATALOG_KEY:-}" ] || { echo "ILIADA_CATALOG_KEY is empty" >&2; exit 1; }
+          [ -n "${ILIADA_CACHE_KEY:-}" ] || { echo "ILIADA_CACHE_KEY is empty" >&2; exit 1; }
+          printf '%s\n' "$ILIADA_CATALOG_KEY" > "$RUNNER_TEMP/catalog.key"
+          printf '%s\n' "$ILIADA_CACHE_KEY" > "$RUNNER_TEMP/cache.key"
+          chmod 600 "$RUNNER_TEMP/catalog.key" "$RUNNER_TEMP/cache.key"
+
+      - name: Fill cache.iliada-os.com
+        env:
+          ILIADA_CACHE_KEY_FILE: ${{ runner.temp }}/cache.key
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          set +x
+          [ -n "${R2_ACCOUNT_ID:-}" ] || { echo "R2_ACCOUNT_ID is empty" >&2; exit 1; }
+          [ -n "${R2_ACCESS_KEY_ID:-}" ] || { echo "R2_ACCESS_KEY_ID is empty" >&2; exit 1; }
+          [ -n "${R2_SECRET_ACCESS_KEY:-}" ] || { echo "R2_SECRET_ACCESS_KEY is empty" >&2; exit 1; }
+          bash scripts/push-cache.sh .
+
+      - name: Sign the source archive
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y pkg-config libzstd-dev
+          mkdir -p "$RUNNER_TEMP/dist"
+          nix develop --command cargo run -p iliada-catalog --features builder -- \
+            release --source . --version "${{ steps.ver.outputs.version }}" \
+            --key "$RUNNER_TEMP/catalog.key" --out "$RUNNER_TEMP/dist"
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          out=$RUNNER_TEMP/dist
+          files=(
+            "$out/release.json"
+            "$out/release.json.sig"
+            "$out/iliada-$VERSION-source.tar.zst"
+          )
+          for f in "${files[@]}"; do
+            [ -s "$f" ] || { echo "missing $f" >&2; exit 1; }
+          done
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${files[@]}" --clobber
+          else
+            gh release create "$TAG" --title "Iliada $VERSION" --notes "Iliada $VERSION" "${files[@]}"
+          fi
+
+      - name: Delete signing keys
+        if: always()
+        run: |
+          set +x
+          rm -f "$RUNNER_TEMP/catalog.key" "$RUNNER_TEMP/cache.key"
+          unset ILIADA_CATALOG_KEY ILIADA_CACHE_KEY R2_SECRET_ACCESS_KEY R2_ACCESS_KEY_ID || true
+
+  iso:
+    if: >-
+      github.repository == 'iliada-os/iliada' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && inputs.iso))
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    steps:
+      - name: Free disk space
+        run: |
+          df -h
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /usr/local/.ghcup \
+            /usr/share/swift \
+            /usr/local/share/powershell \
+            /opt/hostedtoolcache
+          sudo docker system prune -af || true
+          df -h
+
+      - name: Check the tag name
+        id: ver
+        env:
+          EVENT: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ github.event.inputs.tag }}
+          PUSH_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = workflow_dispatch ]; then
+            TAG=$DISPATCH_TAG
+          else
+            TAG=$PUSH_TAG
+          fi
+          case "$TAG" in
+            v*) ;;
+            *) echo "not a version tag: $TAG" >&2; exit 1 ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ steps.ver.outputs.tag }}
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@fd24c48048070c1be9acd18c9d369a83f0fe94d7 # v31.8.1
+        with:
+          github_access_token: ${{ github.token }}
+          extra_nix_config: |
+            extra-substituters = https://cache.iliada-os.com
+            extra-trusted-public-keys = cache.iliada-os.com-1:m3Nzs56JqFzorWcJP9N49LnaeHNyzdodpQE26xtwQXk=
+            filter-syscalls = false
+
+      - name: Build the installer ISO
+        run: nix build -L .#installer-iso --out-link result-iso
+
+      - name: Upload the ISO to R2
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          set +x
+          [ -n "${R2_ACCOUNT_ID:-}" ] || { echo "R2_ACCOUNT_ID is empty" >&2; exit 1; }
+          [ -n "${R2_ACCESS_KEY_ID:-}" ] || { echo "R2_ACCESS_KEY_ID is empty" >&2; exit 1; }
+          [ -n "${R2_SECRET_ACCESS_KEY:-}" ] || { echo "R2_SECRET_ACCESS_KEY is empty" >&2; exit 1; }
+          iso=$(echo result-iso/iso/*.iso)
+          [ -s "$iso" ] || { echo "no ISO in result-iso/iso" >&2; exit 1; }
+          name=iliada-${VERSION}-x86_64-linux.iso
+          tmp=$RUNNER_TEMP/$name
+          cp -L "$iso" "$tmp"
+          (cd "$RUNNER_TEMP" && sha256sum "$name" > "$name.sha256")
+          aws=$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#awscli2 | head -1)/bin/aws
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          export AWS_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID
+          export AWS_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY
+          export AWS_DEFAULT_REGION=auto
+          # Same bucket as the Nix cache; iso/ is not a store path. Nothing is deleted.
+          "$aws" s3 cp --quiet "$tmp" "s3://iliada-cache/iso/$name" --endpoint-url "$endpoint"
+          "$aws" s3 cp --quiet "$RUNNER_TEMP/$name.sha256" "s3://iliada-cache/iso/$name.sha256" \
+            --content-type text/plain --endpoint-url "$endpoint"
+          echo "uploaded iso/$name ($(du -h "$tmp" | cut -f1))"
+          cat "$RUNNER_TEMP/$name.sha256"

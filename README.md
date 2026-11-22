@@ -57,7 +57,9 @@ Silicon, or QEMU), or boot the installer ISO: **Install Iliada** walks you
 through it, and the **Setup Assistant** can restore your apps and settings
 from a GitHub backup. Afterwards everything is changed in **Iliada
 Settings** (or with the `iliada` command), never with `sudo`. See
-**[docs/install.md](docs/install.md)**.
+**[docs/install.md](docs/install.md)**. Pushing a `v*` tag on
+`iliada-os/iliada` publishes the release (binary cache, signed update,
+GitHub release); see **[Releasing](docs/install.md#releasing)**.
 
 ## Using it
 
@@ -91,6 +93,7 @@ nix/
 templates/default/ the user configuration (nix flake init -t …)
 tests/installer/   end-to-end install test (QEMU/KVM)
   package.nix      Nix package for the Rust workspace
+.github/workflows  Release (version tags on iliada-os/iliada only)
 docs/              architecture, IPC spec, ADRs
 examples/          example bundle, watchlist, isolation config
 xtask/             cargo xtask automation

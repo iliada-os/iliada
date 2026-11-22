@@ -48,6 +48,9 @@
   Installed systems keep a Document Reader that can read English, Greek,
   French, German and Spanish (other languages were a gigabyte); more can
   be added later.
+- **A version tag on GitHub publishes the release**: push `v0.2.7` and
+  GitHub fills the download cache, signs the update, and attaches the files
+  computers fetch. The home build machine is no longer required for that.
 
 ## 0.2.6 (2026-11-20)
 

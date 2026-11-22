@@ -286,10 +286,12 @@ then continues the backup's.
 1. Restore a GitHub backup onto a freshly installed computer (backup, list
    and restore on the same computer work).
 2. Each release: set `VERSION` and the two Cargo workspace versions, commit, tag
-   `v<version>`, `iliada-catalog release` (it checks all three),
-   upload `release.json`, its `.sig` and the source archive to the GitHub release
-   (0.2.0 published 2026-11-11). Systems fetch them anonymously from the public
-   repository.
+   `v<version>` and push it. GitHub Actions
+   ([docs/install.md#releasing](install.md#releasing)) fills
+   `cache.iliada-os.com`, runs `iliada-catalog release` (it checks `VERSION`
+   and both Cargo workspaces), and uploads `release.json`, its `.sig` and the
+   source archive to the GitHub release (0.2.0 published 2026-11-11). Systems
+   fetch them anonymously from the public repository.
 3. LibreOffice Writer on ARM (its ARM build stops at start-up with a UNO
    exception; the x86-64 build works).
 4. Boot the ISO on a physical PC and read its hardware report (`iliada report` or Settings → About → Save report): Wi-Fi, graphics drivers and frosted glass, sleep, high-resolution screens.
