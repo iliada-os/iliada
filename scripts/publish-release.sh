@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Publish an Iliada release that installed systems update to.
+# Local fallback: publish an Iliada release that installed systems update to.
+#
+# Preferred: merge, then `git tag -a v<version> && git push origin v<version>`.
+# GitHub Actions (.github/workflows/release.yml) packs, signs, fills the
+# binary cache and creates the GitHub release. Do not run this script at the
+# same time: it would tag and upload again.
 #
 #   scripts/publish-release.sh 0.2.0 ~/.config/iliada/catalog.key
 #

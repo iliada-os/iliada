@@ -192,3 +192,37 @@ Settings → Updates → **Check now** / **Update now** (or
 `iliada system update`). Iliada checks daily. An update downloads the
 signed release, swaps `/etc/iliada/source`, rebuilds, and is a new boot-menu
 entry; if the build fails, nothing changes. Apps update on their own.
+
+## Releasing
+
+A version is published from GitHub when you push its tag, not from a home
+server. The catalog key, cache key and R2 passwords live as organization
+secrets (`ILIADA_CATALOG_KEY`, `ILIADA_CACHE_KEY`, `R2_ACCOUNT_ID`,
+`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`).
+
+1. Set `VERSION` and both Cargo workspace versions (`cargo update -w` in
+   each), and the `iliada-*` versions in
+   `nix/patches/cosmic-settings-iliada.Cargo.lock`.
+2. Move the changelog's Unreleased notes into a version section.
+3. Merge to `main`.
+4. Tag and push:
+   ```sh
+   git tag -a v0.2.7 -m "Iliada 0.2.7"
+   git push origin v0.2.7
+   ```
+
+GitHub Actions (`.github/workflows/release.yml`) then, only on
+`iliada-os/iliada`:
+
+* Builds an installed system from that source and uploads to
+  `cache.iliada-os.com` whatever `cache.nixos.org` does not already have
+  (signed with the cache key). Computers then download instead of compiling.
+* Packs `iliada-<version>-source.tar.zst`, signs `release.json`, and
+  creates the GitHub release that Settings → Updates fetches.
+* On a tag push (or from the Actions tab with “ISO” ticked), builds the
+  installer ISO and puts it and a `.sha256` in the same R2 bucket under
+  `iso/`. The free tier is 10 GB; old files are never deleted automatically.
+
+You can re-run a tag from the Actions tab. The scripts
+`scripts/publish-release.sh` and `scripts/push-cache.sh` remain a local
+fallback; do not run them at the same time as the GitHub workflow.
