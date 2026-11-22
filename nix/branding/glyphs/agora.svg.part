@@ -1,10 +1,4 @@
-<g fill="#040A1A" opacity="0.3" transform="translate(0 4)">
-    <path d="M128 46 L216 94 L40 94 Z"/>
-    <rect x="44" y="94" width="168" height="20"/>
-    <rect x="52" y="114" width="152" height="76"/>
-    <rect x="38" y="189" width="180" height="19"/>
-  </g>
-  <path fill="url(#il-bronze)" d="M128 46 L216 94 L40 94 Z"/>
+<path fill="url(#il-bronze)" d="M128 46 L216 94 L40 94 Z"/>
   <path fill="url(#il-crest)" d="M128 60 L188 88 L68 88 Z"/>
   <rect x="44" y="94" width="168" height="20" rx="1.5" fill="url(#il-bronze)"/>
   <rect x="50" y="98" width="156" height="12" fill="#14254A"/>

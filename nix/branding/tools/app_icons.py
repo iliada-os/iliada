@@ -1,5 +1,6 @@
-# Iliada app and system icons: one navy squircle tile, bronze-and-red glyphs.
-# Called from generate.py. Glyphs live in nix/branding/glyphs/.
+# Iliada app and system icons: freestanding bronze-and-red shapes with a soft
+# drop shadow, no tile behind them. Called from generate.py. Glyphs live in
+# nix/branding/glyphs/.
 from pathlib import Path
 
 EXTRA = {
@@ -82,56 +83,109 @@ TARGETS = [
 
 
 def apps_glyph(squircle):
-    cells = []
+    tiles = []
     for row in range(3):
         for col in range(3):
-            cx = 78 + col * 50
-            cy = 78 + row * 50
-            d = squircle(cx, cy, 18, n=5, seg=24)
+            d = squircle(78 + col * 50, 78 + row * 50, 18, n=5, seg=24)
             fill = "url(#il-crest)" if col == 0 else "url(#il-bronze)"
-            cells.append((d, fill, cx, cy))
-    shadow = "\n    ".join(f'<path d="{d}"/>' for d, _, _, _ in cells)
-    tiles = "\n  ".join(f'<path fill="{fill}" d="{d}"/>' for d, fill, _, _ in cells)
-    return (
-        f'<g opacity="0.3" fill="#040A1A" transform="translate(0 4)">\n    {shadow}\n  </g>\n  {tiles}'
-    )
+            tiles.append(f'<path fill="{fill}" d="{d}"/>')
+    return "\n  ".join(tiles)
 
 
 def workspaces_glyph(squircle):
-    cells = [(78, 90), (178, 90), (78, 166), (178, 166)]
-    parts = ['<g fill="#040A1A" opacity="0.3" transform="translate(0 4)">']
-    ds = []
-    for cx, cy in cells:
-        d = squircle(cx, cy, 32, n=5, seg=24)
-        ds.append(d)
-        parts.append(f'<path d="{d}"/>')
-    parts.append("</g>")
-    parts.append(f'<path fill="url(#il-bronze)" d="{ds[0]}"/>')
+    ds = [squircle(cx, cy, 32, n=5, seg=24) for cx, cy in [(78, 90), (178, 90), (78, 166), (178, 166)]]
+    parts = [f'<path fill="url(#il-bronze)" d="{ds[0]}"/>']
+    # mid blue, not navy, so the empty workspaces read on light and dark
     for d in ds[1:]:
-        parts.append(f'<path fill="#22396A" stroke="#DDA34E" stroke-width="3" d="{d}"/>')
+        parts.append(f'<path fill="#3B5C94" stroke="#DDA34E" stroke-width="4" d="{d}"/>')
     parts.append('<rect x="62" y="78" width="32" height="8" rx="3" fill="#9E1F18"/>')
     return "\n  ".join(parts)
 
 
-def generate(branding, repo, squircle, svg, tile_icon):
+# ---- freestanding layout ----
+# A few glyphs only read because the old navy tile sat behind them. They get
+# their own body here, drawn under the glyph.
+UNDERLAY = {
+    # temple: a dark cella wall behind the columns
+    "agora": '<rect x="52" y="110" width="152" height="80" fill="#14254A"/>',
+    # screenshot: a screen inside the corner brackets
+    "screenshot": '<rect x="72" y="80" width="112" height="96" rx="12" fill="#14254A"/>',
+}
+
+# Every glyph is scaled so its longest side is TARGET units of the 256 box,
+# times this factor: wide rectangles and tall shapes look heavier than round
+# ones at the same size.
+OPTICAL = {
+    "settings": 0.95, "updates": 0.95, "search": 0.95,
+    "term": 0.92, "photos": 0.92, "monitor": 0.92, "files": 0.93,
+    "agora": 0.95, "edit": 0.96, "installer": 0.97, "screenshot": 0.94,
+    "player": 0.88, "apps": 0.86, "workspaces": 0.88,
+}
+TARGET = 204
+CENTER = (128, 124)  # a little high, the shadow sits underneath
+
+DROP_DEFS = """
+    <filter id="il-drop" filterUnits="userSpaceOnUse" x="-20" y="-20" width="296" height="300">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="7" result="b1"/>
+      <feOffset in="b1" dy="8" result="o1"/>
+      <feComponentTransfer in="o1" result="s1"><feFuncA type="linear" slope="0.42"/></feComponentTransfer>
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.6" result="b2"/>
+      <feOffset in="b2" dy="2" result="o2"/>
+      <feComponentTransfer in="o2" result="s2"><feFuncA type="linear" slope="0.35"/></feComponentTransfer>
+      <feMerge><feMergeNode in="s1"/><feMergeNode in="s2"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>"""
+
+
+def ink_box(svg_text):
+    """Bounding box of everything drawn, in 256-unit icon space."""
+    import io
+    import cairosvg
+    from PIL import Image
+
+    png = cairosvg.svg2png(bytestring=svg_text.encode(), output_width=512, output_height=512)
+    alpha = Image.open(io.BytesIO(png)).getchannel("A").point(lambda a: 255 if a > 24 else 0)
+    x0, y0, x1, y1 = alpha.getbbox()
+    return x0 / 2, y0 / 2, x1 / 2, y1 / 2
+
+
+def freestanding(name, title, body, extra_defs, svg, icon_defs):
+    """The glyph alone, sized to the icon box, with a soft drop shadow."""
+    if name in UNDERLAY:
+        body = f"  {UNDERLAY[name]}\n  {body}"
+    defs = icon_defs + extra_defs
+    x0, y0, x1, y1 = ink_box(svg((0, 0, 256, 256), body, defs))
+    s = TARGET * OPTICAL.get(name, 1.0) / max(x1 - x0, y1 - y0)
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    tf = f"translate({CENTER[0]} {CENTER[1]}) scale({s:.4f}) translate({-cx:.2f} {-cy:.2f})"
+    out = f'  <g filter="url(#il-drop)">\n    <g transform="{tf}">\n{body}\n    </g>\n  </g>'
+    return svg((0, 0, 256, 256), out, defs + DROP_DEFS, title)
+
+
+def glyph(name, glyphs_dir, squircle):
+    """(body, title, extra_defs) for one named glyph."""
+    if name == "apps":
+        return apps_glyph(squircle), "Applications", ""
+    if name == "workspaces":
+        return workspaces_glyph(squircle), "Workspaces", ""
+    title, extra = GLYPHS[name]
+    body = (Path(glyphs_dir) / f"{name}.svg.part").read_text()
+    return body, title, EXTRA.get(extra or "", "")
+
+
+def icon(name, branding, squircle, svg, icon_defs):
+    body, title, extra_defs = glyph(name, Path(branding) / "glyphs", squircle)
+    return freestanding(name, title, body, extra_defs, svg, icon_defs)
+
+
+def generate(branding, repo, squircle, svg, icon_defs):
     """Write every app / system SVG. Returns [(svg_path, icon_id), ...]."""
-    glyphs_dir = Path(branding) / "glyphs"
     written = []
-
-    def glyph(name):
-        if name == "apps":
-            return apps_glyph(squircle), "Applications", ""
-        if name == "workspaces":
-            return workspaces_glyph(squircle), "Workspaces", ""
-        title, extra = GLYPHS[name]
-        body = (glyphs_dir / f"{name}.svg.part").read_text()
-        extra_defs = EXTRA.get(extra or "", "")
-        return body, title, extra_defs
-
+    cache = {}
     for name, rel, icon_id in TARGETS:
-        body, title, extra_defs = glyph(name)
+        if name not in cache:
+            cache[name] = icon(name, branding, squircle, svg, icon_defs)
         out = Path(repo) / rel
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(tile_icon(title, body, extra_defs))
+        out.write_text(cache[name])
         written.append((str(out), icon_id))
     return written

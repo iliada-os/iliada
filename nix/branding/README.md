@@ -22,9 +22,9 @@ the same hand-authored helmet and crest paths, so they always match.
 | `logo.txt` | fastfetch ASCII art. `$1` is the crest color, `$2` the helmet color. |
 | `fastfetch.jsonc` | fastfetch config that uses `logo.txt`. |
 | `png/` | Raster exports: icon at 16 to 1024 px, mark and mono mark at 512 px, lockups at 1600 px wide. PNG sizes for the icon theme are built at install (`rsvg-convert`). |
-| `glyphs/` | Inner pictures for each app icon, without the tile. `tools/app_icons.py` wraps them. |
+| `glyphs/` | The picture for each app icon. `tools/app_icons.py` sizes each one and adds the drop shadow. |
 | `tools/generate.py` | Regenerates all SVGs, PNGs and `logo.txt` (needs `cairosvg` and `pillow`). |
-| `tools/app_icons.py` | Shared tile plus the app and COSMIC icon list. |
+| `tools/app_icons.py` | Freestanding icon layout (size balancing, drop shadow) plus the app and COSMIC icon list. |
 
 The wordmark is drawn as geometric outlines, so no font is needed.
 
@@ -53,9 +53,11 @@ The wordmark is drawn as geometric outlines, so no font is needed.
 * Every Iliada app icon (agora, Settings, Homer, Setup Assistant, the
   installer, Files, Text Editor, Terminal, Media Player, Photos, Document
   Reader, Screenshot, Search, System Monitor, the app library, Workspaces,
-  updates) uses the same navy tile, bronze and red, readable from 16 to
-  512 px. Apps installed as `.app` bundles get that tile when
-  `iliada-appd` exports them.
+  updates) is a freestanding bronze and red shape with a soft drop
+  shadow, no tile behind it, readable from 16 to 512 px on light and dark
+  backgrounds. Apps installed as `.app` bundles keep their own icon; only a
+  plain square picture gets a soft rounded tile when `iliada-appd` exports
+  it.
 * Use `iliada-mono.svg` for tiny sizes, the boot splash, panel / tray icons and
   anywhere only one color is allowed. Set the color with CSS `color` (or the
   `color` attribute on the `<svg>`).

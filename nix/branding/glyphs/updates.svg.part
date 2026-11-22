@@ -1,7 +1,4 @@
-<g fill="#040A1A" opacity="0.3" transform="translate(0 4)">
-    <circle cx="128" cy="128" r="78"/>
-  </g>
-  <circle cx="128" cy="128" r="78" fill="url(#il-bronze)"/>
+<circle cx="128" cy="128" r="78" fill="url(#il-bronze)"/>
   <circle cx="128" cy="128" r="64" fill="#14254A"/>
   <path fill="none" stroke="#F6D38E" stroke-width="3.2" stroke-linecap="square" d="
     M128 70 V82 M158 78 L150 88 M180 98 L168 106
