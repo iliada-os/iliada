@@ -11,15 +11,27 @@ EXTRA = {
       <stop offset="1" stop-color="#8A5418"/>
     </linearGradient>""",
     "homer": """
-    <radialGradient id="coin" cx="110" cy="96" r="130" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#E9B866"/>
-      <stop offset="0.6" stop-color="#C58A3A"/>
-      <stop offset="1" stop-color="#8A5418"/>
-    </radialGradient>
-    <linearGradient id="head" x1="90" y1="60" x2="170" y2="210" gradientUnits="userSpaceOnUse">
+    <linearGradient id="hm-face" x1="104" y1="70" x2="152" y2="132" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFF1CC"/>
-      <stop offset="0.4" stop-color="#F6D38E"/>
-      <stop offset="1" stop-color="#C8892F"/>
+      <stop offset="0.45" stop-color="#F6D38E"/>
+      <stop offset="1" stop-color="#D49A45"/>
+    </linearGradient>
+    <linearGradient id="hm-hair" x1="96" y1="50" x2="160" y2="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C58A3A"/>
+      <stop offset="1" stop-color="#7A4612"/>
+    </linearGradient>
+    <linearGradient id="hm-neck" x1="0" y1="120" x2="0" y2="156" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A5671F"/>
+      <stop offset="1" stop-color="#DDA34E"/>
+    </linearGradient>
+    <linearGradient id="hm-drape" x1="70" y1="150" x2="190" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F6D38E"/>
+      <stop offset="0.5" stop-color="#DDA34E"/>
+      <stop offset="1" stop-color="#A5671F"/>
+    </linearGradient>
+    <linearGradient id="hm-base" x1="0" y1="196" x2="0" y2="206" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F6D38E"/>
+      <stop offset="1" stop-color="#A5671F"/>
     </linearGradient>""",
     "installer": """
     <linearGradient id="sail" x1="0" y1="64" x2="0" y2="140" gradientUnits="userSpaceOnUse">
