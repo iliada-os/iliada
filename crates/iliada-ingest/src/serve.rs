@@ -57,7 +57,7 @@ pub struct Watch {
     /// Installed by hand; no source to install or update from.
     #[serde(default)]
     pub manual: bool,
-    /// Installed from the Iliada Store; `iliada-store sync` manages it.
+    /// Installed from agora; `iliada-store sync` manages it.
     pub store: Option<String>,
 }
 
@@ -113,7 +113,7 @@ struct State {
     fingerprints: BTreeMap<String, String>,
 }
 
-/// Where each app on the list stands, for the Store and the `iliada`
+/// Where each app on the list stands, for agora and the `iliada`
 /// command (in the cache folder, readable by everyone).
 pub const STATUS_FILE: &str = "status.json";
 
@@ -255,7 +255,7 @@ pub async fn serve(ingestor: Arc<Ingestor>, cfg: ServeConfig) -> Result<()> {
         let full_check = Instant::now() >= next_update_check;
         if full_check {
             ingestor.invalidate_indexes().await;
-            // Which apps Debian has, for the Store and the iliada command.
+            // Which apps Debian has, for agora and the iliada command.
             let ing = ingestor.clone();
             tokio::spawn(async move {
                 let c = ing.config();

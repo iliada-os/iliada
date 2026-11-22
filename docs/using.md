@@ -1,6 +1,6 @@
 # Using Iliada: how do I…
 
-Everything below can be done without a terminal, in the **Store** (in the
+Everything below can be done without a terminal, in **agora** (in the
 dock) or **Settings**. If you like the terminal, the `iliada` command
 does the same things; you never need `sudo`.
 
@@ -8,15 +8,15 @@ There are three kinds of things you can add:
 
 | | What it is | Example | Where |
 |---|---|---|---|
-| **App** | A program with a window. Lives in Applications as one `.app`, runs in its own sandbox. | Firefox, GIMP, VLC | Store → Discover |
-| **Software** | A program you use in the Terminal. Installed for everyone on the computer. | Python, Node.js, ffmpeg, Git | Store → Software |
-| **Service** | A program that runs in the background, even when nobody is logged in. | SSH server, nginx, PostgreSQL | Store → Services |
+| **App** | A program with a window. Lives in Applications as one `.app`, runs in its own sandbox. | Firefox, GIMP, VLC | agora → Discover |
+| **Software** | A program you use in the Terminal. Installed for everyone on the computer. | Python, Node.js, ffmpeg, Git | agora → Software |
+| **Service** | A program that runs in the background, even when nobody is logged in. | SSH server, nginx, PostgreSQL | agora → Services |
 
 The `iliada install` command works out which kind you mean.
 
 ## Install an app
 
-Open the **Store**, find the app, click **Get**. It appears in Applications
+Open **agora**, find the app, click **Get**. It appears in Applications
 and the launcher within seconds. The first time it starts, it asks for what it
 needs (a folder, the camera, the microphone).
 
@@ -28,11 +28,11 @@ iliada install libreoffice-writer      # names with spaces: use dashes
 To remove an app, drag it from Applications to the Trash (or
 `iliada remove firefox`).
 
-**An app that isn't in the Store?** Search for it anyway. Debian packages
-about 2,000 desktop apps, and the Store lists the ones it doesn't have under
-**Not in the Store yet** with a **Build** button. Iliada builds the app
+**An app that isn't in agora?** Search for it anyway. Debian packages
+about 2,000 desktop apps, and agora lists the ones it doesn't have under
+**Not in agora yet** with a **Build** button. Iliada builds the app
 from Debian's package on this computer (a minute or two) into an ordinary
-sandboxed `.app`. Most apps work this way; a few don't, and the Store says
+sandboxed `.app`. Most apps work this way; a few don't, and agora says
 why. The same from the terminal, or ask the assistant ("install Krita"):
 
 ```sh
@@ -42,7 +42,7 @@ iliada install krita          # asks first; --build to skip the question
 
 ## Install Python (or Node.js, Go, ffmpeg…)
 
-Store → **Software** → Python → **Get**. Or type "python" in the Store's
+agora → **Software** → Python → **Get**. Or type "python" in agora's
 search box from any page. It takes a few minutes the first time (the system
 is rebuilt with Python in it), then open a new Terminal:
 
@@ -54,7 +54,7 @@ python3 --version
 Several at once: `iliada install python node git`. Remove with
 `iliada remove python`.
 
-**Something that is not in the Store?** Any program packaged in nixpkgs
+**Something that is not in agora?** Any program packaged in nixpkgs
 (search at [search.nixos.org/packages](https://search.nixos.org/packages))
 can be installed by its package name:
 
@@ -71,7 +71,7 @@ python3 -m venv .venv && . .venv/bin/activate && pip install requests
 
 ## Turn on a service (SSH, a web server, a database)
 
-Store → **Services** → **Turn on**, or Settings → Services. From the
+agora → **Services** → **Turn on**, or Settings → Services. From the
 terminal:
 
 ```sh
@@ -84,7 +84,7 @@ iliada remove ssh            # removes it
 
 | | Command | Kept after a restart? |
 |---|---|---|
-| **Installed** or not | `iliada install ssh` · `iliada remove ssh` (the Store's Turn on / Turn off) | yes |
+| **Installed** or not | `iliada install ssh` · `iliada remove ssh` (agora's Turn on / Turn off) | yes |
 | **Starts at boot** or not | `systemctl enable sshd` · `systemctl disable sshd` | yes |
 | **Running now** or not | `systemctl start sshd` · `systemctl stop sshd` | no: until the next restart |
 
@@ -116,12 +116,12 @@ else: `systemctl --user enable …`.
 
 ## Find something
 
-Type in the Store's search box: it searches apps, software and services
+Type in agora's search box: it searches apps, software and services
 together. Or:
 
 ```sh
 iliada search database
-iliada list                  # everything in the Store, and what you have
+iliada list                  # everything in agora, and what you have
 ```
 
 ## Update

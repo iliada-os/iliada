@@ -1,4 +1,4 @@
-//! The Iliada Store engine.
+//! agora's engine: install and update sandboxed .app bundles from the signed catalog.
 //!
 //! 1. Fetch `catalog-2.json` (or, where there is none, `catalog.json`) and
 //!    its `.sig`; verify the signature with the key built into Iliada before
@@ -39,7 +39,7 @@ pub struct StoreConfig {
     pub catalog: String,
     pub key: VerifyingKey,
     pub apps_dir: PathBuf,
-    /// The app list Store installs are recorded in (`/etc/iliada/apps.toml`).
+    /// The app list agora installs are recorded in (`/etc/iliada/apps.toml`).
     pub app_list: Option<PathBuf>,
 }
 

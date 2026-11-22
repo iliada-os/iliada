@@ -66,7 +66,7 @@
           default = iliada-tools;
         }
         // lib.optionalAttrs (lib.elem system linuxSystems) {
-          # The Store, Settings and the Setup Assistant (libcosmic).
+          # agora, Settings and the Setup Assistant (libcosmic).
           iliada-desktop-apps = pkgs.callPackage ./nix/desktop-apps.nix { };
         }
         // lib.optionalAttrs (lib.elem system linuxSystems) {

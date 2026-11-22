@@ -125,7 +125,7 @@ fn wrong_processor_text(name: &str, built: &str, here: &str) -> String {
     let example = if built == "aarch64" { " (such as Apple Silicon Macs)" } else { "" };
     format!(
         "{name} is made for {} computers{example}, so it can't open on this {} computer. \
-         Get {name} again from the Store for the version made for this computer.",
+         Get {name} again from agora for the version made for this computer.",
         computer_kind(built),
         computer_kind(here),
     )
@@ -168,7 +168,7 @@ mod tests {
         assert_eq!(
             wrong_processor_text("Firefox", "x86_64", "aarch64"),
             "Firefox is made for Intel or AMD computers, so it can't open on this ARM computer. \
-             Get Firefox again from the Store for the version made for this computer."
+             Get Firefox again from agora for the version made for this computer."
         );
         assert!(
             wrong_processor_text("Firefox", "aarch64", "x86_64").contains("ARM computers (such as Apple Silicon Macs)")

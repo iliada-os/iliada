@@ -11,7 +11,7 @@
 //!   iliada assistant email status | set <address> [--server …] | test <to> | remove
 //!   iliada report                                    (this computer's hardware, to share for help)
 //!
-//! Apps are `.app` bundles from the Store (no rebuild, no root). Everything
+//! Apps are `.app` bundles from agora (no rebuild, no root). Everything
 //! else goes through the Iliada system service, which checks that you are an
 //! administrator; no sudo. Everything here is also in the Settings app.
 
@@ -36,7 +36,7 @@ Examples:
   iliada system update            update Iliada itself
   iliada ask \"turn on dark mode\"  ask Homer, the assistant
 
-Everything here is also in the Store and in Settings.";
+Everything here is also in agora and in Settings.";
 
 #[derive(Parser)]
 #[command(
@@ -56,15 +56,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Everything in the Store: apps, software and services.
+    /// Everything in agora: apps, software and services.
     List,
-    /// Find something in the Store ("iliada search database").
+    /// Find something in agora ("iliada search database").
     Search { word: String },
     /// Install apps, software (python, node, ffmpeg…) or turn on services (ssh, nginx…).
     Install {
         #[arg(required = true)]
         names: Vec<String>,
-        /// Build apps that aren't in the Store from Debian's package without asking.
+        /// Build apps that aren't in agora from Debian's package without asking.
         #[arg(long)]
         build: bool,
         /// When one can't be installed, go on with the others (and say which failed at the end).
@@ -476,7 +476,7 @@ fn is_app(id: &str, name: &str, typed: &str) -> bool {
 
 fn not_in_store(name: &str) -> anyhow::Error {
     anyhow::anyhow!(
-        "there is nothing called \"{name}\" in the Store. Look for it with `iliada search {name}`. \
+        "there is nothing called \"{name}\" in agora. Look for it with `iliada search {name}`. \
          Any other command-line program from nixpkgs can be installed with `iliada tool add {name}`."
     )
 }
@@ -504,7 +504,7 @@ async fn install(names_typed: Vec<String>, build: bool, v: bool) -> Result<()> {
     }
     // Every name is checked before anything is installed.
     let mut entries = Vec::new();
-    // Not in the Store, but Debian has it: Iliada can build it.
+    // Not in agora, but Debian has it: Iliada can build it.
     let mut to_build = Vec::new();
     let debian = if apps.is_empty() { Vec::new() } else { translate::debian_apps() };
     let s = if apps.is_empty() { None } else { Some(store().await?) };
@@ -614,7 +614,7 @@ fn make_default_browser(name: &str) -> Result<()> {
     let original = std::fs::read_to_string(&favorites).or_else(|_| {
         std::fs::read_to_string("/run/current-system/sw/share/cosmic/com.system76.CosmicAppList/v1/favorites")
     })?;
-    let migrated = migrate_old_settings_dock(&original).unwrap_or_else(|| original.clone());
+    let migrated = migrate_dock(&original).unwrap_or_else(|| original.clone());
     let updated = with_in_dock(&migrated, file.trim_end_matches(".desktop")).unwrap_or(migrated);
     if updated != original {
         if let Some(dir) = favorites.parent() {
@@ -625,24 +625,41 @@ fn make_default_browser(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Since 0.2.6 Settings is COSMIC Settings. Docks from before still name
-/// `org.iliada.Settings`; point them at the new app (or drop the old id if
-/// the new one is already there). `None` when nothing to change.
-fn migrate_old_settings_dock(favorites: &str) -> Option<String> {
-    if !favorites.contains("\"org.iliada.Settings\"") {
+/// Dock launcher ids that changed with an Iliada update. Docks from before
+/// still name the old id; point them at the new app, or drop the old id if
+/// the new one is already there. `None` when nothing to change.
+///
+/// Settings became COSMIC Settings in 0.2.6; the Store became agora later.
+fn migrate_dock(favorites: &str) -> Option<String> {
+    let mut current = favorites.to_owned();
+    let mut changed = false;
+    for (old, new) in [("org.iliada.Settings", "com.system76.CosmicSettings"), ("org.iliada.Store", "org.iliada.Agora")]
+    {
+        if let Some(next) = replace_dock_id(&current, old, new) {
+            current = next;
+            changed = true;
+        }
+    }
+    changed.then_some(current)
+}
+
+fn replace_dock_id(favorites: &str, old: &str, new: &str) -> Option<String> {
+    let old_q = format!("\"{old}\"");
+    let new_q = format!("\"{new}\"");
+    if !favorites.contains(&old_q) {
         return None;
     }
-    if favorites.contains("\"com.system76.CosmicSettings\"") {
+    if favorites.contains(&new_q) {
         let mut out = Vec::new();
         for line in favorites.lines() {
-            if line.contains("\"org.iliada.Settings\"") {
+            if line.contains(&old_q) {
                 continue;
             }
             out.push(line.to_owned());
         }
         Some(out.join("\n") + "\n")
     } else {
-        Some(favorites.replace("\"org.iliada.Settings\"", "\"com.system76.CosmicSettings\""))
+        Some(favorites.replace(&old_q, &new_q))
     }
 }
 
@@ -686,12 +703,12 @@ fn install_notice(done: &[String], failed: &[String]) -> (String, String) {
         (_, true) => ("Your apps are ready".into(), format!("{} {are} in Applications.", and_list(done))),
         (true, false) => (
             "Your apps could not be installed".into(),
-            format!("Check the internet connection, then get {} from the Store or ask Homer.", and_list(failed)),
+            format!("Check the internet connection, then get {} from agora or ask Homer.", and_list(failed)),
         ),
         (false, false) => (
             "Some apps could not be installed".into(),
             format!(
-                "{} {are} in Applications. Get {} later from the Store, or ask Homer.",
+                "{} {are} in Applications. Get {} later from agora, or ask Homer.",
                 and_list(done),
                 and_list(failed)
             ),
@@ -699,7 +716,7 @@ fn install_notice(done: &[String], failed: &[String]) -> (String, String) {
     }
 }
 
-/// An app whose licence keeps it out of the Store: this computer downloads
+/// An app whose licence keeps it out of agora: this computer downloads
 /// it from its maker and makes it into a sandboxed app (and keeps it updated).
 async fn build_from_maker(m: &translate::FromMaker) -> Result<()> {
     let list = StoreConfig::from_env()?.app_list.unwrap_or_else(|| "/etc/iliada/apps.toml".into());
@@ -720,11 +737,11 @@ async fn build_from_maker(m: &translate::FromMaker) -> Result<()> {
     }
 }
 
-/// An app that isn't in the Store: built from Debian's package on this
+/// An app that isn't in agora: built from Debian's package on this
 /// computer, after asking (or with --build).
 async fn build_from_debian(app: &translate::DebianApp, yes: bool) -> Result<()> {
     eprintln!(
-        "{} isn't in the Iliada Store. Iliada can build it from Debian's package \"{}\": it becomes \
+        "{} isn't in agora. Iliada can build it from Debian's package \"{}\": it becomes \
          an ordinary sandboxed app, but a few apps don't work this way.",
         app.name, app.package
     );
@@ -802,7 +819,7 @@ async fn search(word: &str) -> Result<()> {
     use iliada_system::software::Kind;
     let w = word.to_lowercase();
     let mut found = false;
-    // Apps the Store has aren't offered again from Debian.
+    // Apps agora has aren't offered again from Debian.
     let mut in_store: Vec<String> = Vec::new();
     match async { store().await?.catalog().await }.await {
         Ok(catalog) => {
@@ -820,7 +837,7 @@ async fn search(word: &str) -> Result<()> {
                 }
             }
         }
-        Err(e) => eprintln!("(The Store's app list could not be reached: {e:#})"),
+        Err(e) => eprintln!("(agora's app list could not be reached: {e:#})"),
     }
     let items = iliada_system::software::search(word);
     for (kind, title) in [(Kind::Software, "Software for the terminal"), (Kind::Service, "Services")] {
@@ -833,7 +850,7 @@ async fn search(word: &str) -> Result<()> {
             }
         }
     }
-    // Not in the Store, but Debian has it (Iliada builds it on this computer).
+    // Not in agora, but Debian has it (Iliada builds it on this computer).
     let debian = translate::debian_apps();
     let more: Vec<_> = translate::search(&debian, word)
         .into_iter()
@@ -842,7 +859,7 @@ async fn search(word: &str) -> Result<()> {
         .collect();
     if !more.is_empty() {
         found = true;
-        println!("Not in the Store yet: Iliada can build these from Debian's package");
+        println!("Not in agora yet: Iliada can build these from Debian's package");
         for a in more {
             let summary: String = a.summary.chars().take(36).collect();
             println!(
@@ -854,7 +871,7 @@ async fn search(word: &str) -> Result<()> {
         }
     }
     if !found {
-        println!("Nothing in the Store matches \"{word}\".");
+        println!("Nothing in agora matches \"{word}\".");
         println!("Command-line programs from nixpkgs (search.nixos.org/packages): iliada tool add <name>");
     }
     Ok(())
@@ -1128,32 +1145,49 @@ mod tests {
 
     #[test]
     fn old_docks_point_settings_at_cosmic_settings() {
-        let old = "[\n    \"com.system76.CosmicFiles\",\n    \"org.iliada.Settings\",\n    \"org.iliada.Store\",\n]\n";
+        let old = "[\n    \"com.system76.CosmicFiles\",\n    \"org.iliada.Settings\",\n    \"org.iliada.Agora\",\n]\n";
         assert_eq!(
-            migrate_old_settings_dock(old).unwrap(),
-            "[\n    \"com.system76.CosmicFiles\",\n    \"com.system76.CosmicSettings\",\n    \"org.iliada.Store\",\n]\n"
+            migrate_dock(old).unwrap(),
+            "[\n    \"com.system76.CosmicFiles\",\n    \"com.system76.CosmicSettings\",\n    \"org.iliada.Agora\",\n]\n"
         );
         let both = "[\n    \"org.iliada.Settings\",\n    \"com.system76.CosmicSettings\",\n]\n";
-        assert_eq!(migrate_old_settings_dock(both).unwrap(), "[\n    \"com.system76.CosmicSettings\",\n]\n");
-        let last = "[\n    \"org.iliada.Store\",\n    \"org.iliada.Settings\"\n]\n";
+        assert_eq!(migrate_dock(both).unwrap(), "[\n    \"com.system76.CosmicSettings\",\n]\n");
+        let last = "[\n    \"org.iliada.Agora\",\n    \"org.iliada.Settings\"\n]\n";
         assert_eq!(
-            migrate_old_settings_dock(last).unwrap(),
-            "[\n    \"org.iliada.Store\",\n    \"com.system76.CosmicSettings\"\n]\n"
+            migrate_dock(last).unwrap(),
+            "[\n    \"org.iliada.Agora\",\n    \"com.system76.CosmicSettings\"\n]\n"
         );
-        assert_eq!(migrate_old_settings_dock("[\n    \"com.system76.CosmicSettings\",\n]\n"), None);
+        assert_eq!(migrate_dock("[\n    \"com.system76.CosmicSettings\",\n]\n"), None);
+    }
+
+    #[test]
+    fn old_docks_point_store_at_agora() {
+        let old = "[\n    \"com.system76.CosmicFiles\",\n    \"org.iliada.Store\",\n    \"org.iliada.Assistant\",\n]\n";
+        assert_eq!(
+            migrate_dock(old).unwrap(),
+            "[\n    \"com.system76.CosmicFiles\",\n    \"org.iliada.Agora\",\n    \"org.iliada.Assistant\",\n]\n"
+        );
+        let both = "[\n    \"org.iliada.Store\",\n    \"org.iliada.Agora\",\n]\n";
+        assert_eq!(migrate_dock(both).unwrap(), "[\n    \"org.iliada.Agora\",\n]\n");
+        let from_before_settings = "[\n    \"org.iliada.Settings\",\n    \"org.iliada.Store\",\n]\n";
+        assert_eq!(
+            migrate_dock(from_before_settings).unwrap(),
+            "[\n    \"com.system76.CosmicSettings\",\n    \"org.iliada.Agora\",\n]\n"
+        );
+        assert_eq!(migrate_dock("[\n    \"org.iliada.Agora\",\n]\n"), None);
     }
 
     #[test]
     fn the_browser_goes_into_the_dock_after_files() {
-        let dock = "[\n    \"com.system76.CosmicFiles\",\n    \"org.iliada.Store\",\n]\n";
+        let dock = "[\n    \"com.system76.CosmicFiles\",\n    \"org.iliada.Agora\",\n]\n";
         let chrome = "iliada-org.debian.google-chrome-stable";
         let with = with_in_dock(dock, chrome).unwrap();
         assert_eq!(
             with,
-            "[\n    \"com.system76.CosmicFiles\",\n    \"iliada-org.debian.google-chrome-stable\",\n    \"org.iliada.Store\",\n]\n"
+            "[\n    \"com.system76.CosmicFiles\",\n    \"iliada-org.debian.google-chrome-stable\",\n    \"org.iliada.Agora\",\n]\n"
         );
         assert_eq!(with_in_dock(&with, chrome), None, "already there");
-        let no_files = with_in_dock("[\n    \"org.iliada.Store\",\n]\n", chrome).unwrap();
+        let no_files = with_in_dock("[\n    \"org.iliada.Agora\",\n]\n", chrome).unwrap();
         assert!(no_files.starts_with("[\n    \"iliada-org.debian.google-chrome-stable\","));
     }
 
@@ -1170,7 +1204,7 @@ mod tests {
         assert_eq!((t.as_str(), b.as_str()), ("Your apps are ready", "Firefox and VLC are in Applications."));
         let (t, b) = install_notice(&s(&["Firefox"]), &s(&["Google Chrome"]));
         assert_eq!(t, "Some apps could not be installed");
-        assert_eq!(b, "Firefox is in Applications. Get Google Chrome later from the Store, or ask Homer.");
+        assert_eq!(b, "Firefox is in Applications. Get Google Chrome later from agora, or ask Homer.");
         let (t, _) = install_notice(&[], &s(&["VLC"]));
         assert_eq!(t, "Your apps could not be installed");
     }

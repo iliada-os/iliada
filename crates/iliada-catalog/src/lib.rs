@@ -1,6 +1,6 @@
 //! The Iliada app catalog (format version 1).
 //!
-//! `catalog.json` lists the apps the Store offers. It is signed as a whole
+//! `catalog.json` lists the apps agora offers. It is signed as a whole
 //! (`catalog.json.sig`: Ed25519 over the exact file bytes, base64); each app
 //! archive is authenticated by the SHA-256 recorded in the signed catalog.
 //! The public key is built into Iliada. See `iliada_apps/CATALOG.md`.

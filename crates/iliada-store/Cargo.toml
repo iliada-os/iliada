@@ -1,6 +1,6 @@
 [package]
 name = "iliada-store"
-description = "The Iliada Store: install and update sandboxed .app bundles from the signed catalog."
+description = "agora: install and update sandboxed .app bundles from the signed catalog."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

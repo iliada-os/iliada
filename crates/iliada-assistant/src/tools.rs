@@ -42,7 +42,7 @@ pub fn all() -> Vec<Tool> {
         },
         Tool {
             name: "search_store",
-            description: "Apps available in the Iliada Store (name, id, category, summary, whether it uses the internet, whether it is installed), and, with a query, desktop apps from Debian that are not in the Store yet (from: \"debian\"; install_app can build them). Optional query filters by name or summary.",
+            description: "Apps available in agora (name, id, category, summary, whether it uses the internet, whether it is installed), and, with a query, desktop apps from Debian that are not in agora yet (from: \"debian\"; install_app can build them). Optional query filters by name or summary.",
             schema: obj(json!({ "query": { "type": "string" } }), &[]),
             acts: false,
             full_access: false,
@@ -56,7 +56,7 @@ pub fn all() -> Vec<Tool> {
         },
         Tool {
             name: "install_app",
-            description: "Install (or update) an app from the Store. An app that is not in the Store but that search_store lists from Debian is built from Debian's package on this computer (a minute or two; a few apps do not work this way): say so when you do it.",
+            description: "Install (or update) an app from agora. An app that is not in agora but that search_store lists from Debian is built from Debian's package on this computer (a minute or two; a few apps do not work this way): say so when you do it.",
             schema: app(),
             acts: true,
             full_access: false,
@@ -98,14 +98,14 @@ pub fn all() -> Vec<Tool> {
         },
         Tool {
             name: "recent_changes",
-            description: "What changed on this computer recently, newest first: every change to its configuration (apps, software, services, settings, updates; made in Settings, the Store, the terminal or by you), and the actions you took for this person (including ones they undid). Use it for \"what changed?\" and \"why is X different?\".",
+            description: "What changed on this computer recently, newest first: every change to its configuration (apps, software, services, settings, updates; made in Settings, agora, the terminal or by you), and the actions you took for this person (including ones they undid). Use it for \"what changed?\" and \"why is X different?\".",
             schema: none(),
             acts: false,
             full_access: false,
         },
         Tool {
             name: "list_software",
-            description: "The Store's command-line software (Python, Node.js, ffmpeg, …) and background services (nginx, PostgreSQL, …): id, name, kind, and whether each is installed or on. Any other nixpkgs package can also be installed with add_tools.",
+            description: "agora's command-line software (Python, Node.js, ffmpeg, …) and background services (nginx, PostgreSQL, …): id, name, kind, and whether each is installed or on. Any other nixpkgs package can also be installed with add_tools.",
             schema: none(),
             acts: false,
             full_access: false,
@@ -471,10 +471,10 @@ pub async fn run(store: &Store, name: &str, input: &Value) -> Result<String> {
                 let path = store.install(entry, &|_, _| {}).await?;
                 return Ok(json!({ "installed": entry.name, "path": path }).to_string());
             }
-            // Not in the Store: Debian's package, built on this computer.
+            // Not in agora: Debian's package, built on this computer.
             let debian = iliada_store::translate::debian_apps();
             let d = iliada_store::translate::find(&debian, app)
-                .with_context(|| format!("there is no app called {app:?} in the Store or in Debian"))?
+                .with_context(|| format!("there is no app called {app:?} in agora or in Debian"))?
                 .clone();
             let list = StoreConfig::from_env()?.app_list.unwrap_or_else(|| "/etc/iliada/apps.toml".into());
             iliada_store::translate::request(&list, &d.package)?;

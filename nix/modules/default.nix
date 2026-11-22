@@ -9,7 +9,7 @@
 #   iliada.rustUserland  Rust coreutils, sudo-rs, ntpd-rs, fish
 #   iliada.baseTools     everyday command-line tools (lspci, dig, lsof, jq, …)
 #   iliada.settingsFile  settings.toml: command-line tools, services
-#   iliada.store         the Store catalog and automatic app updates
+#   iliada.store         agora's catalog and automatic app updates
 #   iliada.system        the system service: tools, services, updates, backups
 #   iliada.ux            FHS hiding, privilege model
 #   iliada.account       the Iliada account server and settings backups

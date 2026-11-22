@@ -7,7 +7,7 @@
 #   ssh = true                  SSH server: installed and started at boot
 #                               ("manual": installed, started only by hand; false: not installed)
 #   printing = false            CUPS
-#   nginx, postgresql, mariadb, redis, docker   (the Store's Services)
+#   nginx, postgresql, mariadb, redis, docker   (agora's Services)
 { config, lib, pkgs, ... }:
 let
   cfg = config.iliada;
@@ -54,7 +54,7 @@ in
     environment.systemPackages = map toPkg (cfg.tools ++ (s.tools.packages or [ ]));
     services.openssh.enable = lib.mkIf (installed "ssh") true;
     services.printing.enable = lib.mkIf (installed "printing") true;
-    # Background services from the Store. They listen on this computer; the
+    # Background services from agora. They listen on this computer; the
     # firewall stays closed to them unless configured otherwise.
     services.nginx = lib.mkIf (installed "nginx") {
       enable = true;

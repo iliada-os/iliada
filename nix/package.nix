@@ -18,7 +18,7 @@ rustPlatform.buildRustPackage {
   };
   cargoLock.lockFile = ../Cargo.lock;
 
-  # zstd: used by the Store's tests (archive fixtures) and the catalog builder.
+  # zstd: used by agora's tests (archive fixtures) and the catalog builder.
   nativeBuildInputs = [ pkg-config ];
   buildInputs = [ zstd ];
   # iliada-system's tests drive git (the configuration is a repository).
@@ -26,7 +26,7 @@ rustPlatform.buildRustPackage {
 
   # Only the default members (crates/*) are built; xtask is dev tooling.
   meta = {
-    description = "Iliada system tools: the system service, Store, broker, sandbox and the iliada command";
+    description = "Iliada system tools: the system service, agora, broker, sandbox and the iliada command";
     homepage = "https://iliada-os.com";
     license = with lib.licenses; [ mit asl20 ];
     platforms = lib.platforms.unix;

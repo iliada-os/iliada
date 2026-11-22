@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=agora
+GenericName=Get apps
+Comment=Get apps for Iliada
+Exec=iliada-store-gui
+Icon=org.iliada.Agora
+Categories=System;PackageManager;
+Keywords=apps;install;store;agora;software;marketplace;
+StartupWMClass=org.iliada.Agora

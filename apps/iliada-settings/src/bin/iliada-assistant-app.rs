@@ -620,7 +620,7 @@ impl App {
         items.push(
             widget::column::with_capacity(2)
                 .push(widget::text::caption(
-                    "Everything that changed the system, made in Settings, the Store, the terminal or by Homer.",
+                    "Everything that changed the system, made in Settings, agora, the terminal or by Homer.",
                 ))
                 .push(changes)
                 .spacing(spacing.space_xxs)
@@ -979,8 +979,8 @@ mod tests {
     #[test]
     fn formatting_marks_are_dropped() {
         assert_eq!(
-            super::plain("## Steps\n1. **Install apps** from the Store\n__done__"),
-            "Steps\n1. Install apps from the Store\ndone"
+            super::plain("## Steps\n1. **Install apps** from agora\n__done__"),
+            "Steps\n1. Install apps from agora\ndone"
         );
         assert_eq!(super::plain("2 * 3 = 6"), "2 * 3 = 6");
     }

@@ -1,4 +1,4 @@
-//! `iliada-store`: command-line front end of the Store (the GUI uses the same engine).
+//! `iliada-store`: command-line front end of agora (the GUI uses the same engine).
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -19,7 +19,7 @@ enum Cmd {
     Install { app: String },
     /// Update every installed app that has a newer version.
     Update,
-    /// Install the Store apps on the app list that are missing, and update
+    /// Install the agora apps on the app list that are missing, and update
     /// the rest (what the background service runs).
     Sync,
     /// Remove an app.

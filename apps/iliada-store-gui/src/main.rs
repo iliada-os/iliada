@@ -1,4 +1,4 @@
-//! The Iliada Store.
+//! agora, Iliada's app marketplace.
 //!
 //! A COSMIC app over the `iliada-store` engine: browse the signed catalog,
 //! install, update and open apps. Installing is exactly dragging the `.app`
@@ -58,7 +58,7 @@ enum Message {
     System(Result<SystemStatus, String>),
     Change(String, Request),
     Changed(String, Progress),
-    /// Build an app that isn't in the Store from Debian's package.
+    /// Build an app that isn't in agora from Debian's package.
     Build(String),
     Built(String, Result<(), String>),
     /// Get an app from its maker's download (Google Chrome), by its URL.
@@ -75,7 +75,7 @@ struct App {
     status: BTreeMap<String, Status>,
     search: String,
     system: Option<Result<SystemStatus, String>>,
-    /// Desktop apps Debian has (search offers to build those not in the Store).
+    /// Desktop apps Debian has (search offers to build those not in agora).
     debian: Vec<DebianApp>,
 }
 
@@ -191,7 +191,7 @@ impl App {
             .into()
     }
 
-    /// An app Debian has that isn't in the Store: Build, then Open.
+    /// An app Debian has that isn't in agora: Build, then Open.
     fn debian_row<'a>(&'a self, d: &'a DebianApp) -> Element<'a, Message> {
         let spacing = cosmic::theme::spacing();
         let suffix = format!(".{}", d.package);
@@ -234,7 +234,7 @@ impl App {
             .into()
     }
 
-    /// What the search box finds anywhere in the Store: apps, then software
+    /// What the search box finds anywhere in agora: apps, then software
     /// and services.
     fn search_results(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
@@ -265,12 +265,12 @@ impl App {
                 found = true;
             }
         }
-        // Not in the Store yet: Debian has it, and Iliada can build it.
+        // Not in agora yet: Debian has it, and Iliada can build it.
         let in_store = |name: &str| matches!(&self.catalog, Some(Ok(c)) if c.apps.iter().any(|a| a.name.eq_ignore_ascii_case(name)));
         let more: Vec<_> =
             translate::search(&self.debian, &needle).into_iter().filter(|d| !in_store(&d.name)).take(20).collect();
         if !more.is_empty() {
-            list = list.push(widget::text::title4("Not in the Store yet")).push(widget::text::caption(
+            list = list.push(widget::text::title4("Not in agora yet")).push(widget::text::caption(
                 "Iliada can build these from Debian's packages on this computer. They become ordinary \
                      sandboxed apps, but a few don't work this way.",
             ));
@@ -281,7 +281,7 @@ impl App {
         }
         if !found {
             return widget::container(widget::text::body(format!(
-                "Nothing in the Store matches \"{}\".",
+                "Nothing in agora matches \"{}\".",
                 self.search.trim()
             )))
             .center(Length::Fill)
@@ -379,7 +379,7 @@ impl cosmic::Application for App {
     type Executor = executor::Default;
     type Flags = ();
     type Message = Message;
-    const APP_ID: &'static str = "org.iliada.Store";
+    const APP_ID: &'static str = "org.iliada.Agora";
 
     fn core(&self) -> &Core {
         &self.core
@@ -418,9 +418,9 @@ impl cosmic::Application for App {
             search: String::new(),
             system: None,
         };
-        app.set_header_title("Store".into());
+        app.set_header_title("agora".into());
         let title = match app.core.main_window_id() {
-            Some(id) => app.set_window_title("Store".into(), id),
+            Some(id) => app.set_window_title("agora".into(), id),
             None => Task::none(),
         };
         let load = app.load_catalog();
@@ -595,7 +595,7 @@ impl cosmic::Application for App {
             None => widget::container(widget::text::body("Loading the catalog…")).center(Length::Fill).into(),
             Some(Err(e)) => widget::container(
                 widget::column::with_capacity(2)
-                    .push(widget::text::title4("The Store is not available"))
+                    .push(widget::text::title4("agora is not available"))
                     .push(widget::text::body(e.as_str()))
                     .spacing(spacing.space_s)
                     .align_x(Alignment::Center),

@@ -40,7 +40,7 @@ pub struct Change {
 }
 
 /// The newest `count` changes to /etc/iliada (every change made through
-/// Settings, the Store, the `iliada` command or the assistant is recorded).
+/// Settings, agora, the `iliada` command or the assistant is recorded).
 pub fn changes(count: usize) -> anyhow::Result<Vec<Change>> {
     use anyhow::Context;
     let dir = config_dir();

@@ -419,7 +419,7 @@ impl Panel {
             );
         let apps = settings::section().title("Apps").add(
             settings::item::builder("App updates")
-                .description("Apps from the Store update automatically, every few hours.")
+                .description("Apps from agora update automatically, every few hours.")
                 .control(
                     widget::button::standard("Update apps now")
                         .on_press_maybe(ok.then_some(Message::Run(Request::UpdateApps))),
@@ -599,7 +599,7 @@ impl Panel {
             .title("Add a tool")
             .add(info(
                 "Command-line tools",
-                Some("Programs for the Terminal, like vim or git, installed for everyone on this computer. Apps with windows come from the Store.".into()),
+                Some("Programs for the Terminal, like vim or git, installed for everyone on this computer. Apps with windows come from agora.".into()),
             ))
             .add(settings::item_row(vec![add.into()]));
         settings::view_column(vec![installed.into(), add.into()]).into()
