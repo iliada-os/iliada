@@ -128,7 +128,9 @@ in
       # Iliada's desktop defaults (users can still change them): Applications
       # in the Files sidebar; agora in the dock; the Iliad look.
       # hiPrio: they replace COSMIC's own defaults for the same settings.
-      (lib.hiPrio (pkgs.runCommand "iliada-cosmic-defaults" { } ''
+      (lib.hiPrio (pkgs.runCommand "iliada-cosmic-defaults" {
+        nativeBuildInputs = [ pkgs.librsvg ];
+      } ''
         # The Iliad look: bronze on navy (dark), deep bronze on parchment
         # (light), computed by COSMIC's own theme code (iliada-theme).
         ${desktopApps}/bin/iliada-theme $out/share
@@ -173,8 +175,12 @@ in
           rename ${pkg}/share/applications/${id}.desktop "${name}"
         '') renamedApps}
         for icon in ${../branding/cosmic-icons}/*.svg; do
-          for size in 16x16 24x24 32x32 48x48 64x64 128x128 256x256 scalable; do
-            install -Dm644 "$icon" $out/share/icons/hicolor/$size/apps/$(basename "$icon")
+          id=$(basename "$icon" .svg)
+          install -Dm644 "$icon" $out/share/icons/hicolor/scalable/apps/$id.svg
+          for sz in 16 24 32 48 64 128 256 512; do
+            mkdir -p $out/share/icons/hicolor/''${sz}x''${sz}/apps
+            rsvg-convert -w $sz -h $sz "$icon" \
+              -o $out/share/icons/hicolor/''${sz}x''${sz}/apps/$id.png
           done
         done
         # Tools for the terminal and for Linux experts stay out of the app

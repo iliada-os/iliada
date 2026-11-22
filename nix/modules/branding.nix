@@ -4,9 +4,18 @@
 # The distribution ID stays "nixos" so NixOS tooling keeps working.
 { config, pkgs, ... }:
 let
-  branding = pkgs.runCommand "iliada-branding" { } ''
-    install -Dm644 ${../branding/iliada.svg} $out/share/icons/hicolor/scalable/apps/iliada.svg
+  branding = pkgs.runCommand "iliada-branding" {
+    nativeBuildInputs = [ pkgs.librsvg ];
+  } ''
+    # The named `iliada` icon is the navy tile (greeter, About, launcher).
+    # The unpadded mark stays in pixmaps for places that want the helmet alone.
+    install -Dm644 ${../branding/iliada-icon.svg} $out/share/icons/hicolor/scalable/apps/iliada.svg
     install -Dm644 ${../branding/iliada.svg} $out/share/pixmaps/iliada.svg
+    for sz in 16 24 32 48 64 128 256 512; do
+      mkdir -p $out/share/icons/hicolor/''${sz}x''${sz}/apps
+      rsvg-convert -w $sz -h $sz ${../branding/iliada-icon.svg} \
+        -o $out/share/icons/hicolor/''${sz}x''${sz}/apps/iliada.png
+    done
     install -Dm644 ${../branding/logo.txt} $out/share/iliada/logo.txt
     substitute ${../branding/fastfetch.jsonc} $out/share/iliada/fastfetch.jsonc \
       --replace-fail @logo@ $out/share/iliada/logo.txt

@@ -2,7 +2,7 @@
 # installer. One
 # cargo workspace (apps/), built separately from the core tools because it
 # depends on libcosmic (git dependencies, GPU rendering stack).
-{ lib, rustPlatform, libcosmicAppHook, pkg-config, zstd }:
+{ lib, rustPlatform, libcosmicAppHook, pkg-config, zstd, librsvg }:
 
 rustPlatform.buildRustPackage {
   pname = "iliada-desktop-apps";
@@ -32,7 +32,7 @@ rustPlatform.buildRustPackage {
     patch -d "$lc" -p1 < ${./patches/libcosmic-context-menu-position.patch}
   '';
 
-  nativeBuildInputs = [ libcosmicAppHook pkg-config ];
+  nativeBuildInputs = [ libcosmicAppHook pkg-config librsvg ];
   # zstd: Iliada account backups are compressed before they are encrypted.
   buildInputs = [ zstd ];
   doCheck = false;
@@ -54,6 +54,17 @@ rustPlatform.buildRustPackage {
     install -Dm644 -t $out/share/icons/hicolor/scalable/apps apps/*/res/org.iliada.*.svg
     # Docks from before the rename still look up the old icon name.
     ln -s org.iliada.Agora.svg $out/share/icons/hicolor/scalable/apps/org.iliada.Store.svg
+    for svg in $out/share/icons/hicolor/scalable/apps/org.iliada.*.svg; do
+      id=$(basename "$svg" .svg)
+      for sz in 16 24 32 48 64 128 256 512; do
+        mkdir -p $out/share/icons/hicolor/''${sz}x''${sz}/apps
+        rsvg-convert -w $sz -h $sz "$svg" \
+          -o $out/share/icons/hicolor/''${sz}x''${sz}/apps/$id.png
+      done
+    done
+    for sz in 16 24 32 48 64 128 256 512; do
+      ln -s org.iliada.Agora.png $out/share/icons/hicolor/''${sz}x''${sz}/apps/org.iliada.Store.png
+    done
     # The installer's entries are only linked in on the live system.
     install -Dm644 -t $out/share/iliada/installer apps/iliada-installer/res/*.desktop
   '';
