@@ -6,6 +6,12 @@
 # recorded (`iliada history`) and backed up.
 # Apps are not here: they are .app bundles (see apps.toml and agora).
 
+[language]
+# The computer's language: "en_US.UTF-8" (English) or "el_GR.UTF-8"
+# (Ελληνικά). Change it in Settings → Time & Language → Language, or with
+# `iliada language el`.
+locale = "en_US.UTF-8"
+
 [tools]
 # Command-line tools, installed system-wide (names as in nixpkgs).
 packages = ["vim", "git", "curl", "wget", "htop", "rsync", "unzip", "zip"]

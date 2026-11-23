@@ -1,11 +1,15 @@
 [Desktop Entry]
 Type=Application
 Name=Homer
+Name[el]=Όμηρος
 GenericName=Assistant
+GenericName[el]=Βοηθός
 Comment=Ask Homer to do things for you
+Comment[el]=Ζητήστε από τον Όμηρο να κάνει πράγματα για εσάς
 Exec=iliada-assistant-app
 Icon=org.iliada.Assistant
 Categories=Utility;System;
 Keywords=ai;assistant;homer;claude;help;ask;
+Keywords[el]=όμηρος;βοηθός;τεχνητή νοημοσύνη;βοήθεια;ερώτηση;
 StartupNotify=true
 StartupWMClass=org.iliada.Assistant

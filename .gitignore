@@ -7,3 +7,4 @@
 __pycache__/
 *.pyc
 nix/branding/png/hicolor/
+/apps/target

@@ -17,17 +17,18 @@ let
     rsvg-convert -w 3840 ${../branding/wallpaper/wine-dark-sea.svg} -o $out/share/backgrounds/iliada/wine-dark-sea.png
   '';
   themeIds = "com.system76.CosmicTheme.Dark com.system76.CosmicTheme.Light com.system76.CosmicTheme.Dark.Builder com.system76.CosmicTheme.Light.Builder";
-  # COSMIC's apps under plain names (left out when a system excludes the app).
+  # COSMIC's apps under plain names, in English and Greek (left out when a
+  # system excludes the app).
   renamedApps = lib.filter (a: !(lib.elem a.pkg config.environment.cosmic.excludePackages)) [
-    { pkg = pkgs.cosmic-settings; id = "com.system76.CosmicSettings"; name = "Settings"; }
-    { pkg = pkgs.cosmic-files; id = "com.system76.CosmicFiles"; name = "Files"; }
-    { pkg = pkgs.cosmic-edit; id = "com.system76.CosmicEdit"; name = "Text Editor"; }
-    { pkg = pkgs.cosmic-term; id = "com.system76.CosmicTerm"; name = "Terminal"; }
-    { pkg = pkgs.cosmic-player; id = "com.system76.CosmicPlayer"; name = "Media Player"; }
-    { pkg = pkgs.cosmic-viewer; id = "com.system76.CosmicViewer"; name = "Photos"; }
-    { pkg = pkgs.cosmic-monitor; id = "com.system76.CosmicMonitor"; name = "System Monitor"; }
-    { pkg = pkgs.cosmic-reader; id = "com.system76.CosmicReader"; name = "Document Reader"; }
-    { pkg = pkgs.cosmic-screenshot; id = "com.system76.CosmicScreenshot"; name = "Screenshot"; }
+    { pkg = pkgs.cosmic-settings; id = "com.system76.CosmicSettings"; name = "Settings"; el = "Ρυθμίσεις"; }
+    { pkg = pkgs.cosmic-files; id = "com.system76.CosmicFiles"; name = "Files"; el = "Αρχεία"; }
+    { pkg = pkgs.cosmic-edit; id = "com.system76.CosmicEdit"; name = "Text Editor"; el = "Επεξεργασία κειμένου"; }
+    { pkg = pkgs.cosmic-term; id = "com.system76.CosmicTerm"; name = "Terminal"; el = "Τερματικό"; }
+    { pkg = pkgs.cosmic-player; id = "com.system76.CosmicPlayer"; name = "Media Player"; el = "Αναπαραγωγή πολυμέσων"; }
+    { pkg = pkgs.cosmic-viewer; id = "com.system76.CosmicViewer"; name = "Photos"; el = "Φωτογραφίες"; }
+    { pkg = pkgs.cosmic-monitor; id = "com.system76.CosmicMonitor"; name = "System Monitor"; el = "Εποπτεία συστήματος"; }
+    { pkg = pkgs.cosmic-reader; id = "com.system76.CosmicReader"; name = "Document Reader"; el = "Ανάγνωση εγγράφων"; }
+    { pkg = pkgs.cosmic-screenshot; id = "com.system76.CosmicScreenshot"; name = "Screenshot"; el = "Στιγμιότυπο οθόνης"; }
   ];
 in
 {
@@ -174,10 +175,17 @@ in
         # shows Iliada's pages among its own, is "Settings".
         rename() {
           [ -f "$1" ] || return 0
-          sed -e '/^Name\[/d' -e "s/^Name=.*/Name=$2/" "$1" > $apps/$(basename "$1")
+          # The app's own name in English ($2) and Greek ($3); its actions
+          # (New Window…) keep theirs.
+          awk -v name="$2" -v el="$3" '
+            /^\[/ { main = ($0 == "[Desktop Entry]") }
+            main && /^Name\[/ { next }
+            main && /^Name=/ { print "Name=" name; print "Name[el]=" el; next }
+            { print }
+          ' "$1" > $apps/$(basename "$1")
         }
-        ${lib.concatMapStrings ({ pkg, id, name }: ''
-          rename ${pkg}/share/applications/${id}.desktop "${name}"
+        ${lib.concatMapStrings ({ pkg, id, name, el }: ''
+          rename ${pkg}/share/applications/${id}.desktop "${name}" "${el}"
         '') renamedApps}
         for icon in ${../branding/cosmic-icons}/*.svg; do
           id=$(basename "$icon" .svg)

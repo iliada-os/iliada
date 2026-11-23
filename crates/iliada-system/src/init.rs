@@ -31,6 +31,9 @@ pub struct InitOptions {
     pub full_name: String,
     pub hostname: String,
     pub timezone: String,
+    /// The computer's language (`[language]` in settings.toml); English
+    /// when None.
+    pub language: Option<String>,
     pub auto_login: bool,
     /// Keep developer SSH access (the utm-dev image).
     pub dev_access: bool,
@@ -257,6 +260,11 @@ pub fn init(o: &InitOptions, log: &mut dyn FnMut(&str)) -> Result<()> {
     if !valid_timezone(&o.timezone) {
         bail!("{:?} is not a valid time zone", o.timezone);
     }
+    if let Some(l) = &o.language
+        && !crate::settings::valid_language(l)
+    {
+        bail!("{l:?} is not a language Iliada comes in");
+    }
     let dir = etc(&o.root);
     if dir.join("flake.nix").exists() {
         bail!("{} is already set up", dir.display());
@@ -285,6 +293,13 @@ pub fn init(o: &InitOptions, log: &mut dyn FnMut(&str)) -> Result<()> {
     for name in ["settings.toml", "apps.toml"] {
         if !dir.join(name).exists() {
             std::fs::write(dir.join(name), read(name)?)?;
+        }
+    }
+    if let Some(l) = &o.language {
+        let path = dir.join("settings.toml");
+        let mut doc: toml_edit::DocumentMut = std::fs::read_to_string(&path)?.parse().context("settings.toml")?;
+        if crate::settings::set_language(&mut doc, l)? {
+            std::fs::write(&path, doc.to_string())?;
         }
     }
     let hardware = dir.join("hardware-configuration.nix");
@@ -360,6 +375,7 @@ mod tests {
             full_name: "Alex \"${evil}\" P".into(),
             hostname: "alex-laptop".into(),
             timezone: "Europe/Athens".into(),
+            language: None,
             auto_login: true,
             dev_access: false,
             system: "aarch64-linux".into(),

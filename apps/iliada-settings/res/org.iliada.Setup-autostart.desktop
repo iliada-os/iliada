@@ -1,6 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Setup Assistant
+Name[el]=Βοηθός ρύθμισης
 Exec=iliada-setup --first-run
 Icon=org.iliada.Setup
 NoDisplay=true

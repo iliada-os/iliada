@@ -120,10 +120,31 @@ fn system_prompt(full_access: bool) -> String {
     // The voice comes before the rules, so it can colour how Homer talks but
     // never change what he may do.
     format!(
-        "{SYSTEM} {}\n\nYour voice, as the person set it:\n{}\n\n{SYSTEM_RULES}\n- {RULES}",
+        "{SYSTEM} {}\n\nYour voice, as the person set it:\n{}\n\n{SYSTEM_RULES}\n- {RULES}{}",
         if full_access { FULL } else { LIMITED },
-        voice(own)
+        voice(own),
+        language_note(&session_locale())
     )
+}
+
+/// The language this session shows things in (`LC_ALL`, `LC_MESSAGES`,
+/// then `LANG`, as programs read it).
+fn session_locale() -> String {
+    ["LC_ALL", "LC_MESSAGES", "LANG"]
+        .iter()
+        .filter_map(|v| std::env::var(v).ok())
+        .find(|v| !v.is_empty())
+        .unwrap_or_default()
+}
+
+/// Which language to answer in, by default: the computer's.
+fn language_note(locale: &str) -> &'static str {
+    if locale.starts_with("el") {
+        "\n- This computer is set to Greek. Answer in Modern Greek (monotonic), unless the person writes in \
+         another language; then answer in theirs. Quoting Homer in the original polytonic Greek is welcome."
+    } else {
+        ""
+    }
 }
 
 /// A conversation with the assistant.
@@ -494,6 +515,13 @@ mod tests {
         assert_eq!(voice(Some("x".repeat(9000))).len(), MAX_VOICE);
         let p = system_prompt(false);
         assert!(p.find("Your voice").unwrap() < p.find("How to work").unwrap());
+    }
+
+    #[test]
+    fn answers_in_the_computers_language() {
+        assert!(language_note("el_GR.UTF-8").contains("Answer in Modern Greek"));
+        assert_eq!(language_note("en_US.UTF-8"), "");
+        assert_eq!(language_note(""), "");
     }
     use std::sync::{Arc, Mutex};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};

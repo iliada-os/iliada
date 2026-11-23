@@ -1,7 +1,9 @@
 [Desktop Entry]
 Type=Application
 Name=Setup Assistant
+Name[el]=Βοηθός ρύθμισης
 Comment=Restore a backup or set up this computer
+Comment[el]=Επαναφορά αντιγράφου ασφαλείας ή ρύθμιση αυτού του υπολογιστή
 Exec=iliada-setup
 Icon=org.iliada.Setup
 Categories=Settings;System;

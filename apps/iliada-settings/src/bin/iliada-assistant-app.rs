@@ -31,6 +31,10 @@ use serde_json::Value;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
 /// Things people commonly ask, shown before the first question.
+/// The first words of the Iliad: "Sing, O goddess, the anger…".
+const GREETING: &str = "Μῆνιν ἄειδε, θεά…";
+const GREETING_ENGLISH: &str = "Sing, O goddess…";
+
 const SUGGESTIONS: [&str; 6] = [
     "Switch to dark mode",
     "Install Firefox",
@@ -437,10 +441,17 @@ impl App {
         let mut col = widget::column::with_capacity(lines.len() + 3).spacing(spacing.space_s);
         if lines.is_empty() && self.assistant.is_some() {
             if !self.panel {
+                // The Iliad's first words, as Homer sang them, in every
+                // language; in English with a quiet translation below.
+                let mut welcome = widget::column::with_capacity(4)
+                    .push(widget::icon::from_name("iliada").size(72).icon())
+                    .push(widget::text::title3(GREETING));
+                if !iliada_settings::i18n::is_greek() {
+                    welcome = welcome.push(widget::text::caption(GREETING_ENGLISH));
+                }
                 col = col.push(
-                    widget::column::with_capacity(2)
-                        .push(widget::icon::from_name("iliada").size(72).icon())
-                        .push(widget::text::title3("What can I do for you?"))
+                    welcome
+                        .push(widget::text::title4(iliada_settings::fl!("homer-welcome")))
                         .spacing(spacing.space_s)
                         .align_x(Alignment::Center)
                         .width(Length::Fill),

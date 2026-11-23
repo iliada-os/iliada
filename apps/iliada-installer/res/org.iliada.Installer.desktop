@@ -1,7 +1,9 @@
 [Desktop Entry]
 Type=Application
 Name=Install Iliada
+Name[el]=Εγκατάσταση της Ιλιάδας
 Comment=Install Iliada on this computer
+Comment[el]=Εγκατάσταση της Ιλιάδας σε αυτόν τον υπολογιστή
 Exec=iliada-installer
 Icon=org.iliada.Installer
 Categories=System;

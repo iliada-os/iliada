@@ -4430,6 +4430,8 @@ dependencies = [
  "anyhow",
  "async-trait",
  "futures-util",
+ "i18n-embed",
+ "i18n-embed-fl",
  "iliada-account",
  "iliada-assistant",
  "iliada-bundle",
@@ -4439,6 +4441,7 @@ dependencies = [
  "iliada-types",
  "libcosmic",
  "reqwest",
+ "rust-embed",
  "serde_json",
  "tokio",
 ]

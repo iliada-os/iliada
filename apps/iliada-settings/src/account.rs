@@ -8,7 +8,8 @@ use cosmic::widget::{self, settings};
 use cosmic::{Element, theme};
 use iliada_account::{self as account, DeviceCode, Files, KeyStep, Manifest, Status};
 
-use crate::{ago, open_url};
+use crate::i18n::ago;
+use crate::{fl, open_url};
 
 #[derive(Debug, Clone)]
 pub enum Msg {
@@ -75,7 +76,7 @@ pub struct Account {
     latest: Option<Result<Option<Manifest>, String>>,
     /// The account was made here just now (nothing to restore).
     fresh: bool,
-    busy: Option<&'static str>,
+    busy: Option<String>,
     pub error: Option<String>,
     pub notice: Option<String>,
 }
@@ -162,7 +163,7 @@ impl Account {
 
     pub fn update(&mut self, msg: Msg) -> Task<Msg> {
         let Some(files) = self.files.clone() else {
-            self.error = Some("There is no home folder to keep the account in.".into());
+            self.error = Some(fl!("account-no-home"));
             return Task::none();
         };
         match msg {
@@ -211,12 +212,13 @@ impl Account {
                 match r {
                     Err(e) => self.error = Some(e),
                     Ok((email, KeyStep::Created(key))) => {
-                        self.notice = Some(format!("Signed in as {email}."));
+                        self.notice = Some(fl!("signed-in-done", account = email));
                         self.step = Step::Key(key, true);
                         self.fresh = true;
                     }
-                    Ok((email, KeyStep::Needed)) => self.notice = Some(format!("Signed in as {email}.")),
-                    Ok((email, KeyStep::Ready)) => self.notice = Some(format!("Signed in as {email}.")),
+                    Ok((email, KeyStep::Needed | KeyStep::Ready)) => {
+                        self.notice = Some(fl!("signed-in-done", account = email))
+                    }
                 }
                 return self.refresh();
             }
@@ -239,7 +241,7 @@ impl Account {
             Msg::RecoveryInput(s) => self.recovery = s,
             Msg::UseRecoveryKey => {
                 let text = self.recovery.clone();
-                self.busy = Some("Checking the recovery key");
+                self.busy = Some(fl!("account-busy-checking-key"));
                 self.error = None;
                 return Task::perform(
                     async move { account::use_recovery_key(&files, &text).await.map_err(text_err) },
@@ -253,7 +255,7 @@ impl Account {
                 match r {
                     Ok(()) => {
                         self.recovery.clear();
-                        self.notice = Some("This computer can read your backup now.".into());
+                        self.notice = Some(fl!("account-can-read-backup"));
                         self.latest = None;
                         return self.refresh();
                     }
@@ -261,7 +263,7 @@ impl Account {
                 }
             }
             Msg::AskOtherComputer => {
-                self.busy = Some("Asking");
+                self.busy = Some(fl!("account-busy-asking"));
                 self.error = None;
                 return Task::perform(async move { account::ask_for_key(&files).await.map_err(text_err) }, Msg::Asked);
             }
@@ -307,7 +309,7 @@ impl Account {
             Msg::GiveKey(id) => {
                 let to = self.waiting.iter().find(|w| w.id == id).cloned().expect("checked");
                 self.waiting.retain(|w| w.id != id);
-                self.busy = Some("Handing over the key");
+                self.busy = Some(fl!("account-busy-handing-over"));
                 self.error = None;
                 return Task::perform(
                     async move { account::hand_over_key(&files, &to).await.map(|()| to.computer).map_err(text_err) },
@@ -328,12 +330,12 @@ impl Account {
             Msg::Answered(r) => {
                 self.busy = None;
                 match r {
-                    Ok(computer) => self.notice = Some(format!("“{computer}” has your account key now.")),
+                    Ok(computer) => self.notice = Some(fl!("account-key-handed", computer = computer)),
                     Err(e) => self.error = Some(e),
                 }
             }
             Msg::BackUp => {
-                self.busy = Some("Backing up");
+                self.busy = Some(fl!("activity-backing-up"));
                 self.error = None;
                 return Task::perform(
                     async move { account::backup(&files, true).await.map_err(text_err) },
@@ -344,16 +346,16 @@ impl Account {
                 self.busy = None;
                 match r {
                     Ok(_) => {
-                        self.notice = Some("Backed up.".into());
+                        self.notice = Some(fl!("backed-up"));
                         self.latest = None;
                     }
-                    Err(e) => self.error = Some(format!("The backup didn't work: {e}")),
+                    Err(e) => self.error = Some(fl!("account-backup-failed", error = e)),
                 }
                 return self.refresh();
             }
             Msg::Latest(r) => self.latest = Some(r),
             Msg::Restore => {
-                self.busy = Some("Restoring");
+                self.busy = Some(fl!("account-busy-restoring"));
                 self.error = None;
                 return Task::perform(
                     async move {
@@ -367,21 +369,22 @@ impl Account {
                 self.busy = None;
                 match r {
                     Ok((m, apps)) => {
-                        let mut notice = format!("Your settings from {} are back on this computer.", m.computer);
+                        let mut notice = fl!("account-settings-back", computer = m.computer.as_str());
                         match apps {
                             Some(Ok(from)) => {
-                                notice.push_str(&format!(" The apps and tools from {from} are installing."))
+                                notice.push(' ');
+                                notice.push_str(&fl!("account-apps-installing", computer = from));
                             }
-                            Some(Err(e)) => self.error = Some(format!("The apps and tools didn't come back: {e}")),
+                            Some(Err(e)) => self.error = Some(fl!("account-apps-failed", error = e)),
                             None => {}
                         }
                         self.notice = Some(notice);
                     }
-                    Err(e) => self.error = Some(format!("Couldn't restore: {e}")),
+                    Err(e) => self.error = Some(fl!("account-restore-failed", error = e)),
                 }
             }
             Msg::SignOut => {
-                self.busy = Some("Signing out");
+                self.busy = Some(fl!("activity-signing-out"));
                 return Task::perform(
                     async move {
                         let _ = account::sign_out(&files).await;
@@ -393,7 +396,7 @@ impl Account {
                 self.busy = None;
                 self.step = Step::Idle;
                 self.latest = None;
-                self.notice = Some("Signed out. Your account and its backup are still there.".into());
+                self.notice = Some(fl!("account-signed-out"));
                 return self.refresh();
             }
             Msg::Dismiss => {
@@ -426,12 +429,8 @@ impl Account {
         if self.coming_soon() {
             items.push(
                 settings::section()
-                    .title("Iliada account")
-                    .add(info(
-                        "Coming soon",
-                        "Iliada accounts will remember your settings and bring them to a new computer. \
-                         They're not ready yet. Until then, you can back up to GitHub in Settings → Backup.",
-                    ))
+                    .title(fl!("page-account"))
+                    .add(info(fl!("account-coming-soon"), fl!("account-coming-soon-desc")))
                     .into(),
             );
             return settings::view_column(items).into();
@@ -455,85 +454,77 @@ impl Account {
         match &self.status {
             Status::SignedOut => items.push(
                 settings::section()
-                    .title("Iliada account")
+                    .title(fl!("page-account"))
                     .add(
-                        settings::item::builder("Sign in to your Iliada account")
-                            .description(
-                                "Your desktop settings, Privacy answers and conversations with Homer are backed up, \
-                                 encrypted on this computer first so only you can read them. On a new computer, \
-                                 sign in and they come back. New here? Signing in makes your account.",
-                            )
-                            .control(widget::button::suggested("Sign in").on_press_maybe(idle.then_some(Msg::SignIn))),
+                        settings::item::builder(fl!("account-sign-in-title"))
+                            .description(fl!("account-sign-in-desc"))
+                            .control(
+                                widget::button::suggested(fl!("sign-in")).on_press_maybe(idle.then_some(Msg::SignIn)),
+                            ),
                     )
                     .into(),
             ),
             Status::NeedsKey { email } => {
-                items.push(self.recovery_section().title("Iliada account").add(signed_in_as(email, idle)).into())
+                items.push(self.recovery_section().title(fl!("page-account")).add(signed_in_as(email, idle)).into())
             }
             Status::Ready { email, last_backup, last_error } => {
                 if !self.waiting.is_empty() {
-                    let mut s = settings::section().title("A new computer asks for your account key");
+                    let mut s = settings::section().title(fl!("account-key-request-title"));
                     for w in &self.waiting {
                         let buttons = widget::row::with_capacity(2)
                             .push(
-                                widget::button::standard("Refuse")
+                                widget::button::standard(fl!("refuse"))
                                     .on_press_maybe(idle.then(|| Msg::RefuseKey(w.id.clone()))),
                             )
                             .push(
-                                widget::button::suggested("Approve")
+                                widget::button::suggested(fl!("approve"))
                                     .on_press_maybe(idle.then(|| Msg::GiveKey(w.id.clone()))),
                             )
                             .spacing(theme::spacing().space_xs);
                         s = s.add(
-                            settings::item::builder(format!("“{}” wants to read your backup", w.computer))
-                                .description(format!(
-                                    "Approve only if that computer shows the code {} and you are setting it up \
-                                     yourself.",
-                                    w.code
-                                ))
+                            settings::item::builder(fl!("account-wants-backup", computer = w.computer.as_str()))
+                                .description(fl!("account-approve-only-if", code = w.code.as_str()))
                                 .control(buttons),
                         );
                     }
                     items.push(s.into());
                 }
                 let last = match (last_backup, last_error) {
-                    (_, Some(e)) => format!("The last backup didn't work: {e}"),
-                    (Some(t), None) => format!("Last backup: {}.", ago(*t)),
-                    (None, None) => "Not backed up yet.".into(),
+                    (_, Some(e)) => fl!("account-last-backup-failed", error = e.as_str()),
+                    (Some(t), None) => fl!("last-backup", ago = ago(*t)),
+                    (None, None) => fl!("not-backed-up"),
                 };
                 items.push(
                     settings::section()
-                        .title("Iliada account")
+                        .title(fl!("page-account"))
                         .add(signed_in_as(email, idle))
                         .add(
-                            settings::item::builder("Backup")
-                                .description(format!(
-                                    "{last} Iliada backs up every hour while you're logged in, \
-                                     encrypted on this computer first."
-                                ))
+                            settings::item::builder(fl!("page-backup"))
+                                .description(fl!("account-backup-schedule", last = last))
                                 .control(
-                                    widget::button::standard("Back up now").on_press_maybe(idle.then_some(Msg::BackUp)),
+                                    widget::button::standard(fl!("back-up-now"))
+                                        .on_press_maybe(idle.then_some(Msg::BackUp)),
                                 ),
                         )
                         .add(
-                            settings::item::builder("Recovery key")
-                                .description("A new computer needs it once to read your backup.")
-                                .control(widget::button::standard("Show").on_press(Msg::ShowKey)),
+                            settings::item::builder(fl!("recovery-key"))
+                                .description(fl!("recovery-key-desc"))
+                                .control(widget::button::standard(fl!("show")).on_press(Msg::ShowKey)),
                         )
                         .into(),
                 );
-                let mut what = settings::section().title("What's backed up");
-                for (_, label) in account::PARTS {
-                    what = what.add(info(label, ""));
+                let mut what = settings::section().title(fl!("whats-backed-up"));
+                for (path, label) in account::PARTS {
+                    what = what.add(info(part_label(path, label), ""));
                 }
                 items.push(what.into());
                 let restore = match &self.latest {
-                    None => info("Looking for your backup…", ""),
-                    Some(Err(e)) => info("Couldn't look for your backup", e),
-                    Some(Ok(None)) => info("Your account has no backup yet", ""),
-                    Some(Ok(Some(m))) => restore_item(m, "Restore…", idle),
+                    None => info(fl!("looking-for-backup"), ""),
+                    Some(Err(e)) => info(fl!("backup-look-failed"), e.as_str()),
+                    Some(Ok(None)) => info(fl!("account-no-backup"), ""),
+                    Some(Ok(Some(m))) => restore_item(m, fl!("restore-ellipsis"), idle),
                 };
-                items.push(settings::section().title("Restore").add(restore).into());
+                items.push(settings::section().title(fl!("restore")).add(restore).into());
             }
         }
         settings::view_column(items).into()
@@ -552,16 +543,16 @@ impl Account {
             (Step::Key(k, new), _) => key_card(k, *new),
             (Step::KeyWait(code), _) => key_wait_card(code),
             (_, Status::SignedOut) => {
-                widget::button::suggested("Sign in").on_press_maybe(idle.then_some(Msg::SignIn)).into()
+                widget::button::suggested(fl!("sign-in")).on_press_maybe(idle.then_some(Msg::SignIn)).into()
             }
             (_, Status::NeedsKey { .. }) => self.recovery_section().into(),
             (_, Status::Ready { email, .. }) => {
                 let mut s = settings::section().add(settings::item_row(vec![
-                    widget::text::body(format!("Signed in as {email}")).width(Length::Fill).into(),
+                    widget::text::body(fl!("signed-in-as", account = email.as_str())).width(Length::Fill).into(),
                 ]));
                 // A new account has nothing to bring back yet.
                 if let (Some(m), false) = (self.latest(), self.fresh) {
-                    s = s.add(restore_item(m, "Restore", idle));
+                    s = s.add(restore_item(m, fl!("restore"), idle));
                 }
                 s.into()
             }
@@ -577,7 +568,7 @@ impl Account {
             .on_submit(|_| Msg::UseRecoveryKey)
             .font(cosmic::font::mono())
             .width(Length::Fill);
-        let go = widget::button::standard("Continue")
+        let go = widget::button::standard(fl!("continue"))
             .on_press_maybe((idle && !self.recovery.trim().is_empty()).then_some(Msg::UseRecoveryKey));
         let row = widget::row::with_capacity(2)
             .push(input)
@@ -586,23 +577,21 @@ impl Account {
             .align_y(Alignment::Center);
         settings::section()
             .add(
-                settings::item::builder("Get it from another computer")
-                    .description(
-                        "Your backup is encrypted with a key only your computers have. If one of them is \
-                         signed in, it can hand the key to this one.",
-                    )
+                settings::item::builder(fl!("get-from-other-computer"))
+                    .description(fl!("get-from-other-computer-desc"))
                     .control(
-                        widget::button::suggested("Ask another computer")
+                        widget::button::suggested(fl!("ask-other-computer"))
                             .on_press_maybe(idle.then_some(Msg::AskOtherComputer)),
                     ),
             )
-            .add(info("Or type your recovery key", "The one you saved when you made your account."))
+            .add(info(fl!("type-recovery-key"), fl!("type-recovery-key-desc")))
             .add(settings::item_row(vec![row.into()]))
     }
 
     fn banner(&self) -> Option<Element<'_, Msg>> {
         let spacing = theme::spacing();
-        let row = if let Some(what) = self.busy.or(matches!(self.step, Step::Asking).then_some("Asking for a code")) {
+        let asking = matches!(self.step, Step::Asking).then(|| fl!("account-busy-asking-code"));
+        let row = if let Some(what) = self.busy.clone().or(asking) {
             widget::row::with_capacity(2)
                 .push(widget::progress_bar::circular::Circular::new().size(20.0))
                 .push(widget::text::heading(format!("{what}…")).width(Length::Fill))
@@ -622,22 +611,22 @@ impl Account {
 }
 
 fn signed_in_as(email: &str, idle: bool) -> Element<'_, Msg> {
-    settings::item::builder(format!("Signed in as {email}"))
-        .control(widget::button::standard("Sign out").on_press_maybe(idle.then_some(Msg::SignOut)))
+    settings::item::builder(fl!("signed-in-as", account = email))
+        .control(widget::button::standard(fl!("sign-out")).on_press_maybe(idle.then_some(Msg::SignOut)))
         .into()
 }
 
 fn code_card(c: &DeviceCode) -> Element<'_, Msg> {
     let spacing = theme::spacing();
     let buttons = widget::row::with_capacity(2)
-        .push(widget::button::standard("Cancel").on_press(Msg::CancelSignIn))
-        .push(widget::button::suggested("Open the sign-in page").on_press(Msg::OpenPage))
+        .push(widget::button::standard(fl!("cancel")).on_press(Msg::CancelSignIn))
+        .push(widget::button::suggested(fl!("open-sign-in-page")).on_press(Msg::OpenPage))
         .spacing(spacing.space_s);
     let col = widget::column::with_capacity(5)
-        .push(widget::text::body("Sign in on your Iliada account page, then approve this code:"))
+        .push(widget::text::body(fl!("sign-in-page-code")))
         .push(widget::text::title1(c.user_code.as_str()))
         .push(buttons)
-        .push(widget::text::caption(format!("{} · Waiting for you to approve it…", c.verification_uri)))
+        .push(widget::text::caption(fl!("waiting-approval", url = c.verification_uri.as_str())))
         .spacing(spacing.space_s)
         .align_x(Alignment::Center);
     card(col.width(Length::Fill).into())
@@ -645,20 +634,14 @@ fn code_card(c: &DeviceCode) -> Element<'_, Msg> {
 
 fn key_card(key: &str, new: bool) -> Element<'_, Msg> {
     let spacing = theme::spacing();
-    let text = if new {
-        "Your backup is encrypted on this computer with a key that only your computers have, so nobody else \
-         can read it, Iliada included. Write this recovery key down or print it, and keep it somewhere safe: \
-         a new computer needs it once. If you lose every computer and this key, the backup can't be read."
-    } else {
-        "A new computer needs this once to read your backup. Keep it somewhere safe, away from this computer."
-    };
-    let done = if new { "I've saved it" } else { "Done" };
+    let text = if new { fl!("recovery-key-new") } else { fl!("recovery-key-again") };
+    let done = if new { fl!("saved-it") } else { fl!("done") };
     let buttons = widget::row::with_capacity(2)
-        .push(widget::button::standard("Copy").on_press(Msg::CopyKey))
+        .push(widget::button::standard(fl!("copy")).on_press(Msg::CopyKey))
         .push(widget::button::suggested(done).on_press(if new { Msg::KeySaved } else { Msg::HideKey }))
         .spacing(spacing.space_s);
     let col = widget::column::with_capacity(4)
-        .push(widget::text::title4("Your recovery key"))
+        .push(widget::text::title4(fl!("your-recovery-key")))
         .push(widget::text::title4(key).font(cosmic::font::mono()))
         .push(widget::text::body(text))
         .push(buttons)
@@ -667,8 +650,9 @@ fn key_card(key: &str, new: bool) -> Element<'_, Msg> {
     card(col.width(Length::Fill).into())
 }
 
-fn info<'a>(title: &'a str, description: &'a str) -> Element<'a, Msg> {
-    let mut col = widget::column::with_capacity(2).push(widget::text::body(title));
+fn info<'a>(title: impl Into<String>, description: impl Into<String>) -> Element<'a, Msg> {
+    let description = description.into();
+    let mut col = widget::column::with_capacity(2).push(widget::text::body(title.into()));
     if !description.is_empty() {
         col = col.push(widget::text::caption(description));
     }
@@ -683,12 +667,20 @@ fn card(content: Element<'_, Msg>) -> Element<'_, Msg> {
         .into()
 }
 
-fn restore_item<'a>(m: &'a Manifest, button: &'static str, idle: bool) -> Element<'a, Msg> {
-    settings::item::builder(format!("Backup from {}", m.computer))
-        .description(format!(
-            "Made {}. Restoring puts its settings on this computer; the desktop changes right away.",
-            ago(m.created)
-        ))
+/// What a part of the backup is, in the person's language.
+fn part_label(path: &str, english: &str) -> String {
+    let id = match path {
+        ".config/cosmic" => "part-desktop",
+        ".local/share/iliada/permissions.toml" => "part-privacy",
+        ".local/share/iliada/conversations" => "part-conversations",
+        _ => return english.to_owned(),
+    };
+    crate::i18n::lookup(id).unwrap_or_else(|| english.to_owned())
+}
+
+fn restore_item<'a>(m: &'a Manifest, button: String, idle: bool) -> Element<'a, Msg> {
+    settings::item::builder(fl!("backup-from", computer = m.computer.as_str()))
+        .description(fl!("backup-made", ago = ago(m.created)))
         .control(widget::button::standard(button).on_press_maybe(idle.then_some(Msg::Restore)))
         .into()
 }
@@ -696,13 +688,10 @@ fn restore_item<'a>(m: &'a Manifest, button: &'static str, idle: bool) -> Elemen
 fn key_wait_card(code: &str) -> Element<'_, Msg> {
     let spacing = theme::spacing();
     let col = widget::column::with_capacity(4)
-        .push(widget::text::body(
-            "On a computer already signed in to your account, open Settings → Iliada account. \
-             Approve this computer there if it shows this code:",
-        ))
+        .push(widget::text::body(fl!("key-wait")))
         .push(widget::text::title1(code).font(cosmic::font::mono()))
-        .push(widget::button::standard("Cancel").on_press(Msg::CancelKeyWait))
-        .push(widget::text::caption("Waiting for the other computer…"))
+        .push(widget::button::standard(fl!("cancel")).on_press(Msg::CancelKeyWait))
+        .push(widget::text::caption(fl!("waiting-other-computer")))
         .spacing(spacing.space_s)
         .align_x(Alignment::Center);
     card(col.width(Length::Fill).into())

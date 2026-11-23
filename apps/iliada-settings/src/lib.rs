@@ -2,6 +2,7 @@
 //! Iliada system service as a stream of messages for the UI.
 
 pub mod account;
+pub mod i18n;
 pub mod panel;
 
 use futures_util::Stream;
