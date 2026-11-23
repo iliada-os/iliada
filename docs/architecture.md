@@ -387,17 +387,21 @@ repository run the checks that used to live there (`.github/workflows`):
 * **Dev VM** (`vm.yml`), on pushes to `main`, from the Actions tab, and
   on pull requests that change the boot script or this workflow (not
   every pull request): builds
-  `nixosConfigurations.dev-vm-x86_64.config.system.build.vm`, boots it in
-  QEMU with KVM, waits for the COSMIC desktop (`cosmic-comp`) and stores
-  screenshots as artifacts. The job fails if the desktop never comes up.
-  Over SSH (host port 2222, user `iliada` / password `iliada`; the login
-  shell is fish, so scripts are piped with `bash -s`) it also checks that
-  `iliada-broker`, `iliada-appd` and `iliada-system` are active.
+  `nixosConfigurations.dev-vm-ci-x86_64` (same as the mutable dev VM,
+  with 4 GiB / 2 cores so QEMU's `-m` and the virtiofs memfd match on a
+  hosted runner), boots it in QEMU with KVM, waits for the COSMIC desktop
+  (`cosmic-comp`) and stores screenshots as artifacts. The job fails if
+  the desktop never comes up. Over SSH (host port 2222, user `iliada` /
+  password `iliada`; the login shell is fish, so scripts are piped with
+  `bash -s`) it also checks that `iliada-broker`, `iliada-appd` and
+  `iliada-system` are active.
 * **ISO** (`iso.yml`), from the Actions tab: builds the installer ISO and
   prints its size. The image is not uploaded.
 
-Both binary caches are used as substituters, read-only:
+Both binary caches are used as substituters:
 `cache.nixos.org` and `https://cache.iliada-os.com` (public key
 `cache.iliada-os.com-1:m3Nzs56JqFzorWcJP9N49LnaeHNyzdodpQE26xtwQXk=`,
-the same as in `nix/modules/workstation.nix`). CI never pushes to the
-cache and has no secrets.
+the same as in `nix/modules/workstation.nix`). On a push to `main` in
+`iliada-os/iliada` only, the VM job signs the built closure and uploads
+paths that neither cache already has (same R2 bucket as
+`scripts/push-cache.sh`). Pull requests and forks never upload.

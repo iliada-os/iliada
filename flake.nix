@@ -88,9 +88,13 @@
       nixosModules.dev-access = import ./nix/profiles/dev-access.nix;
 
       # dev-vm-*:    mutable dev system; `nix run .#nixosConfigurations.dev-vm-x86_64.config.system.build.vm`
+      # dev-vm-ci-*: the same, RAM/CPU for GitHub-hosted runners (see nix/hosts/dev-vm-ci.nix)
       # appliance-*: the immutable image (dm-verity store, A/B updates);
       #              `nix build .#nixosConfigurations.appliance-x86_64.config.system.build.image`
       nixosConfigurations = perLinux "dev-vm" [ ./nix/hosts/dev-vm.nix ]
+        // {
+          "dev-vm-ci-x86_64" = mkSystem "x86_64-linux" [ ./nix/hosts/dev-vm-ci.nix ];
+        }
         // perLinux "appliance" [ ./nix/hosts/appliance.nix ]
         // perLinux "utm" [ ./nix/hosts/utm.nix ]
         // perLinux "utm-dev" [ ./nix/hosts/utm-dev.nix ]
