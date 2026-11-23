@@ -164,9 +164,13 @@ in
         apps=$out/share/applications
         mkdir -p $apps
         # COSMIC's apps by plain names ("Files", not "COSMIC Files"), and
-        # Iliada's icons for them (nix/branding/cosmic-icons), at every size
-        # their own come in. One Settings app: COSMIC Settings, which shows
-        # Iliada's pages among its own, is "Settings".
+        # Iliada's icons for them (nix/branding/cosmic-icons). COSMIC's apps
+        # ship their icon as an SVG in every hicolor size folder
+        # (16x16/apps/com.system76.CosmicFiles.svg ...), and an SVG there is
+        # found before a PNG of the same name, so Iliada's icon goes in under
+        # the very same file names (hiPrio wins the clash), plus a PNG for
+        # toolkits that want one. One Settings app: COSMIC Settings, which
+        # shows Iliada's pages among its own, is "Settings".
         rename() {
           [ -f "$1" ] || return 0
           sed -e '/^Name\[/d' -e "s/^Name=.*/Name=$2/" "$1" > $apps/$(basename "$1")
@@ -179,6 +183,7 @@ in
           install -Dm644 "$icon" $out/share/icons/hicolor/scalable/apps/$id.svg
           for sz in 16 24 32 48 64 128 256 512; do
             mkdir -p $out/share/icons/hicolor/''${sz}x''${sz}/apps
+            install -m644 "$icon" $out/share/icons/hicolor/''${sz}x''${sz}/apps/$id.svg
             rsvg-convert -w $sz -h $sz "$icon" \
               -o $out/share/icons/hicolor/''${sz}x''${sz}/apps/$id.png
           done
