@@ -92,6 +92,9 @@ pub fn git(dir: &Path, args: &[&str]) -> Result<String> {
         // default git leaves new objects in the cache, and a power cut
         // after a commit left an empty object that stopped all updates.
         .args(["-c", "core.fsync=all", "-c", "core.fsyncMethod=fsync"])
+        // This repository is the configuration. A detached gc after commit
+        // can pack and delete loose objects while repair() still needs them.
+        .args(["-c", "gc.auto=0", "-c", "maintenance.auto=false"])
         .args(args)
         .output()
         .context("running git")?;
@@ -432,9 +435,15 @@ mod repair_tests {
         let d = dir.path();
         std::fs::write(d.join("apps.toml"), "x\n").unwrap();
         commit_all(d, "only").unwrap();
-        // Every object emptied.
+        // Every object emptied. Only regular files that still exist: git may
+        // write a temporary name under objects/ and rename it, and walk()
+        // must not treat directories or vanished paths as files.
         for e in walk(&d.join(".git/objects")) {
-            let mut p = std::fs::metadata(&e).unwrap().permissions();
+            let Ok(meta) = std::fs::symlink_metadata(&e) else { continue };
+            if !meta.is_file() {
+                continue;
+            }
+            let mut p = meta.permissions();
             #[allow(clippy::permissions_set_readonly_false)]
             p.set_readonly(false);
             std::fs::set_permissions(&e, p).unwrap();
@@ -455,9 +464,16 @@ mod repair_tests {
 
     fn walk(dir: &Path) -> Vec<PathBuf> {
         let mut out = Vec::new();
-        for e in std::fs::read_dir(dir).unwrap().flatten() {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return out;
+        };
+        for e in entries.flatten() {
             let p = e.path();
-            if p.is_dir() { out.extend(walk(&p)) } else { out.push(p) }
+            match e.file_type() {
+                Ok(t) if t.is_dir() => out.extend(walk(&p)),
+                Ok(t) if t.is_file() => out.push(p),
+                _ => {}
+            }
         }
         out
     }
