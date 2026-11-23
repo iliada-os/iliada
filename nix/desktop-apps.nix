@@ -55,6 +55,9 @@ rustPlatform.buildRustPackage {
     # Docks from before the rename still look up the old icon name.
     ln -s org.iliada.Agora.svg $out/share/icons/hicolor/scalable/apps/org.iliada.Store.svg
     for svg in $out/share/icons/hicolor/scalable/apps/org.iliada.*.svg; do
+      # Store.svg is the alias above; converting it would write Store.png
+      # and the symlink below would then fail with "File exists".
+      [ -L "$svg" ] && continue
       id=$(basename "$svg" .svg)
       for sz in 16 24 32 48 64 128 256 512; do
         mkdir -p $out/share/icons/hicolor/''${sz}x''${sz}/apps
