@@ -13,9 +13,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 /// What is backed up, relative to the home folder, and what people call it.
-pub const PARTS: [(&str, &str); 3] = [
+pub const PARTS: [(&str, &str); 4] = [
     (".config/cosmic", "Desktop: appearance, dock and panel, wallpaper, shortcuts"),
-    (".local/share/iliada/permissions.toml", "Privacy: what each app may use"),
+    (".config/iliada/permissions.toml", "Privacy: what each app may use"),
+    // Where those answers were kept before 0.2.8 (read once, then moved).
+    (".local/share/iliada/permissions.toml", "Privacy: what each app may use (older Iliada)"),
     (".local/share/iliada/conversations", "Assistant conversations"),
 ];
 /// Bigger files are left out (settings are small; this skips stray caches).

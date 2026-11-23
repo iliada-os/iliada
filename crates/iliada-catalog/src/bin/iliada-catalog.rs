@@ -360,6 +360,15 @@ async fn build(
                 a
             },
             icon,
+            permissions: Some(
+                bundle
+                    .permissions
+                    .requests
+                    .iter()
+                    .filter_map(|r| iliada_bundle::policy::Key::from_capability(&r.capability))
+                    .map(|k| k.name().to_owned())
+                    .collect(),
+            ),
         };
         fs::create_dir_all(out.join("entries"))?;
         fs::write(

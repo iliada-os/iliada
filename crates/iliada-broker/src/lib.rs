@@ -6,7 +6,8 @@
 //!
 //! Decision order for `Capability` requests (see [`engine::Engine`]):
 //! 1. Not declared in the bundle's `Permissions.toml` → deny, no prompt.
-//! 2. System policy forbids it → deny, no prompt.
+//! 2. System policy forbids it (the computer's limits in
+//!    `/etc/iliada/permissions.toml`, see [`limits`]) → deny, no prompt.
 //! 3. A persistent ("Always") grant exists → allow.
 //! 4. A "While running" grant exists in this sandbox's session → allow.
 //! 5. Otherwise ask the user through the [`prompt::PromptFrontend`] — a
@@ -17,6 +18,7 @@
 
 pub mod audit;
 pub mod engine;
+pub mod limits;
 pub mod prompt;
 pub mod server;
 pub mod store;

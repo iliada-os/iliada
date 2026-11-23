@@ -21,6 +21,9 @@ struct Cli {
     /// Grant store and audit log.
     #[arg(long, default_value = "/var/lib/iliada-broker")]
     state_dir: PathBuf,
+    /// The computer's limits on what apps may use (ADR 0007).
+    #[arg(long, default_value = "/etc/iliada/permissions.toml")]
+    limits: PathBuf,
     #[arg(long, value_enum, default_value_t = Frontend::Terminal)]
     frontend: Frontend,
 }
@@ -56,7 +59,9 @@ async fn main() -> Result<()> {
         Frontend::Terminal => Arc::new(TerminalPrompt::default()),
         Frontend::Deny => Arc::new(DenyAll),
     };
-    let engine = Engine::new(GrantStore::open(&cli.state_dir)?, frontend);
+    let limits = cli.limits.clone();
+    let engine = Engine::new(GrantStore::open(&cli.state_dir)?, frontend)
+        .with_policy(move |app, cap| iliada_broker::limits::allows(&limits, app.id.as_str(), cap));
     let broker = Arc::new(Broker::new(engine, &cli.state_dir));
     let listeners = broker.listen(&cli.socket_dir, apps)?;
     for (path, _) in &listeners {

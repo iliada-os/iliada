@@ -11,7 +11,7 @@ use cosmic::app::Task;
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, settings};
 use futures_util::StreamExt;
-use iliada_bundle::decisions::{Decision, Decisions};
+use iliada_bundle::policy::{self, AppFacts, Entry, Key, Policy, Rule, Value};
 use iliada_system::client;
 use iliada_system::protocol::{AssistantMode, AssistantSettings, Backup, Event, Provider, Request, Status, model_name};
 use iliada_system::update::describe;
@@ -24,7 +24,6 @@ const MODELS: [&str; 5] =
 static MODEL_NAMES: std::sync::LazyLock<Vec<String>> =
     std::sync::LazyLock::new(|| MODELS.iter().map(|m| model_name(m)).collect());
 use iliada_assistant::email::{EmailAccount, Security};
-use iliada_types::{Capability, FileScope};
 
 const SECURITY_NAMES: [&str; 2] = ["SSL/TLS (port 465)", "STARTTLS (port 587)"];
 
@@ -137,15 +136,49 @@ impl Page {
 }
 
 /// An app's permissions that are asked for (and can be changed here).
-#[derive(Debug, Clone)]
-struct AppPermissions {
-    id: String,
-    name: String,
-    capabilities: Vec<Capability>,
+/// How Settings → Privacy lists permissions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PrivacyBy {
+    #[default]
+    App,
+    Capability,
 }
 
-fn askable(c: &Capability) -> bool {
-    matches!(c, Capability::Camera | Capability::Microphone | Capability::Files(FileScope::KnownDir(_)))
+/// A folder's choices, as Settings says them, and their values in the file.
+const FOLDER_CHOICES: [&str; 4] = ["Read and change", "Read only", "Not allowed", "Ask next time"];
+const FOLDER_VALUES: [Value; 4] = [Value::ReadWrite, Value::ReadOnly, Value::Deny, Value::Ask];
+
+/// One capability's control: a dropdown for folders, a switch otherwise.
+fn permission_control<'a>(app: &str, e: &Entry, title: String) -> Element<'a, Message> {
+    let mut item = settings::item::builder(title);
+    let mut said = Vec::new();
+    if e.setting == Value::Ask {
+        said.push("Asks the next time it opens".to_owned());
+    }
+    if let Some(s) = &e.scope {
+        said.push(s.clone());
+    }
+    if let Some(n) = &e.note {
+        said.push(n.clone());
+    }
+    if !said.is_empty() {
+        item = item.description(said.join(". "));
+    }
+    let (id, key) = (app.to_owned(), e.key);
+    if key.folder().is_some() {
+        let selected = FOLDER_VALUES.iter().position(|v| *v == e.setting);
+        item.control(widget::dropdown(&FOLDER_CHOICES[..], selected, move |i| {
+            Message::Permission(id.clone(), key, FOLDER_VALUES[i])
+        }))
+        .into()
+    } else {
+        item.control(
+            widget::toggler(e.setting == Value::Allow)
+                .width(Length::Shrink)
+                .on_toggle(move |on| Message::Permission(id.clone(), key, if on { Value::Allow } else { Value::Deny })),
+        )
+        .into()
+    }
 }
 
 fn extra_isolation_path() -> Option<std::path::PathBuf> {
@@ -170,32 +203,6 @@ fn save_extra_isolation(ids: &[String]) -> std::io::Result<()> {
     std::fs::write(p, ids.iter().map(|i| format!("{i}\n")).collect::<String>())
 }
 
-/// Installed apps, with the permissions they can be asked for.
-fn installed_permissions() -> Vec<AppPermissions> {
-    let mut out: Vec<AppPermissions> = std::fs::read_dir("/Applications")
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|e| iliada_bundle::Bundle::open(e.path()).ok())
-        .map(|b| {
-            let capabilities: Vec<Capability> =
-                b.permissions.requests.iter().map(|r| r.capability).filter(askable).collect();
-            AppPermissions { id: b.info.id.as_str().to_owned(), name: b.info.name.clone(), capabilities }
-        })
-        .collect();
-    out.sort_by_key(|a| a.name.to_lowercase());
-    out
-}
-
-fn capability_label(c: &Capability) -> String {
-    match c {
-        Capability::Camera => "Camera".into(),
-        Capability::Microphone => "Microphone".into(),
-        Capability::Files(FileScope::KnownDir(d)) => format!("{} folder", d.name()),
-        other => other.to_string(),
-    }
-}
-
 /// What the provider said about the saved API key.
 #[derive(Debug, Clone)]
 enum KeyCheck {
@@ -212,6 +219,7 @@ pub enum Confirm {
     AccountSignOut,
     RemoveKey(Provider),
     TestingUpdates,
+    ResetPermissions,
 }
 
 // Messages are moved around once each; boxing the large one buys nothing.
@@ -230,7 +238,9 @@ pub enum Message {
     LoadBackups,
     Backups(Result<Vec<Backup>, String>),
     Ask(Confirm),
-    Permission(String, Capability, bool),
+    Permission(String, Key, Value),
+    PrivacyBy(PrivacyBy),
+    OpenPermissionsFile,
     ExtraIsolation(String, bool),
     AssistantSet(AssistantSettings),
     AssistantKey(String),
@@ -271,8 +281,10 @@ pub struct Panel {
     backup_name: String,
     backups: Option<Result<Vec<Backup>, String>>,
     confirm: Option<Confirm>,
-    privacy: Vec<AppPermissions>,
-    decisions: Decisions,
+    /// Every program the permissions file describes, and the file itself.
+    programs: Vec<AppFacts>,
+    policy: Policy,
+    privacy_by: PrivacyBy,
     extra_isolation: Vec<String>,
     key_input: String,
     replacing_key: bool,
@@ -632,38 +644,133 @@ impl Panel {
         settings::view_column(vec![section.into()]).into()
     }
 
+    /// Read the permissions file again, and keep its summaries current
+    /// (never over a file with a mistake: people fix it where they made it).
+    fn load_permissions(&mut self) {
+        self.programs = policy::installed_programs();
+        self.policy = Policy::load();
+        if self.policy.readable() && self.policy.user.problems.is_empty() {
+            let programs = self.programs.clone();
+            let _ = self.policy.edit(&programs, |_| Ok(()));
+        }
+    }
+
     fn privacy(&self) -> Element<'_, Message> {
         let mut items: Vec<Element<_>> = vec![info(
             "What apps may use",
             Some(
                 "Every app runs in its own sandbox and sees only its own files. Apps ask the first time \
-                 they need a folder, the camera or the microphone. Changes apply the next time the app opens."
+                 they need a folder, the camera or the microphone. Changes apply the next time the app opens. \
+                 All of this is in your permissions file too, where you, Homer and other tools can read it."
                     .into(),
             ),
         )];
-        if self.privacy.is_empty() {
-            items.push(info("No apps are installed yet", None));
-        }
-        for app in &self.privacy {
-            let mut section = settings::section().title(app.name.clone());
-            for cap in &app.capabilities {
-                let decided = self.decisions.get(&app.id, cap);
-                let (id, c) = (app.id.clone(), *cap);
-                let mut item = settings::item::builder(capability_label(cap));
-                if decided.is_none() {
-                    item = item.description("Not asked yet");
-                }
+        let by = |label: &'static str, v: PrivacyBy| {
+            if self.privacy_by == v {
+                widget::button::suggested(label).on_press(Message::PrivacyBy(v))
+            } else {
+                widget::button::standard(label).on_press(Message::PrivacyBy(v))
+            }
+        };
+        let bar = widget::row::with_capacity(4)
+            .push(by("By app", PrivacyBy::App))
+            .push(by("By permission", PrivacyBy::Capability))
+            .push(widget::space::horizontal())
+            .push(widget::button::standard("Open the file").on_press(Message::OpenPermissionsFile))
+            .spacing(cosmic::theme::spacing().space_xs)
+            .align_y(Alignment::Center);
+        items.push(settings::item_row(vec![bar.into()]).into());
+
+        let problems = self.policy.problems();
+        if !problems.is_empty() {
+            let mut section = settings::section().title("Your permissions file has a mistake");
+            for p in problems.iter().take(5) {
+                section = section.add(info(p.message.clone(), Some(p.to_string())));
+            }
+            if !self.policy.readable() {
                 section = section.add(
-                    item.toggler(decided == Some(Decision::Allow), move |on| Message::Permission(id.clone(), c, on)),
+                    settings::item::builder("Until it is fixed, apps get none of what you decide here").control(
+                        widget::button::destructive("Reset").on_press(Message::Ask(Confirm::ResetPermissions)),
+                    ),
                 );
             }
-            let id = app.id.clone();
-            section = section.add(
-                settings::item::builder("Extra isolation")
-                    .description("Run it in its own virtual machine: stronger isolation, slower start and graphics, no internet or sound yet.")
-                    .toggler(self.extra_isolation.contains(&app.id), move |on| Message::ExtraIsolation(id.clone(), on)),
-            );
             items.push(section.into());
+        }
+
+        let sandboxed: Vec<&AppFacts> = self.programs.iter().filter(|a| a.source.sandboxed()).collect();
+        if sandboxed.is_empty() {
+            items.push(info("No apps are installed yet", None));
+        }
+        match self.privacy_by {
+            PrivacyBy::App => {
+                for app in &sandboxed {
+                    let r = self.policy.report(app);
+                    let mut section = settings::section().title(app.name.clone());
+                    section = section.add(info("Can touch", Some(r.summary.join(", "))));
+                    section = section.add(info("Worst case", Some(r.worst_case.clone())));
+                    for key in Key::ALL {
+                        let e = r.get(key);
+                        if e.changeable {
+                            section = section.add(permission_control(&app.id, e, key.label()));
+                        }
+                    }
+                    let loose: Vec<String> =
+                        Key::ALL.into_iter().filter(|k| !r.get(*k).enforced).map(|k| k.phrase()).collect();
+                    if !loose.is_empty() {
+                        section = section.add(info(
+                            "Not restricted yet",
+                            Some(format!("Iliada cannot limit these yet: {}.", loose.join(", "))),
+                        ));
+                    }
+                    let id = app.id.clone();
+                    section = section.add(
+                        settings::item::builder("Extra isolation")
+                            .description("Run it in its own virtual machine: stronger isolation, slower start and graphics, no camera yet.")
+                            .toggler(self.extra_isolation.contains(&app.id), move |on| Message::ExtraIsolation(id.clone(), on)),
+                    );
+                    items.push(section.into());
+                }
+            }
+            PrivacyBy::Capability => {
+                let reports: Vec<_> = sandboxed.iter().map(|a| self.policy.report(a)).collect();
+                for key in Key::ALL {
+                    match key.rule() {
+                        Rule::Decided { .. } => {
+                            let mut section = settings::section().title(key.label());
+                            let mut any = false;
+                            for r in &reports {
+                                let e = r.get(key);
+                                if e.changeable {
+                                    any = true;
+                                    section = section.add(permission_control(&r.id, e, r.name.clone()));
+                                }
+                            }
+                            if any {
+                                items.push(section.into());
+                            }
+                        }
+                        Rule::NotRestrictedYet { why } => {
+                            items.push(info(
+                                format!("{}: not restricted yet", key.label()),
+                                Some(format!("Every app: {why}.")),
+                            ));
+                        }
+                        Rule::Never { why } => {
+                            items.push(info(format!("{}: never", key.label()), Some(format!("No app: {why}."))));
+                        }
+                    }
+                }
+            }
+        }
+        let open: Vec<&str> = self.programs.iter().filter(|a| !a.source.sandboxed()).map(|a| a.name.as_str()).collect();
+        if !open.is_empty() {
+            items.push(info(
+                "Not sandboxed",
+                Some(format!(
+                    "Built into Iliada or installed as command-line tools, these can do whatever you can: {}.",
+                    open.join(", ")
+                )),
+            ));
         }
         settings::view_column(items).into()
     }
@@ -994,8 +1101,9 @@ impl Panel {
             backup_name: String::new(),
             backups: None,
             confirm: None,
-            privacy: Vec::new(),
-            decisions: Decisions::default(),
+            programs: Vec::new(),
+            policy: Policy::load(),
+            privacy_by: PrivacyBy::default(),
             extra_isolation: Vec::new(),
             key_input: String::new(),
             replacing_key: false,
@@ -1027,9 +1135,8 @@ impl Panel {
             return Task::batch([load_status(), self.account.refresh().map(account_action)]);
         }
         if self.page() == Page::Privacy {
-            self.privacy = installed_permissions();
-            self.decisions = Decisions::default_path().map(|p| Decisions::load(&p)).unwrap_or_default();
             self.extra_isolation = load_extra_isolation();
+            self.load_permissions();
         }
         load_status()
     }
@@ -1043,6 +1150,13 @@ impl Panel {
                      From now on, this computer backs up there."
                 ),
                 widget::button::destructive("Restore"),
+            ),
+            Confirm::ResetPermissions => (
+                "Reset your permissions file?",
+                "Your answers are forgotten and every app asks again the next time it opens. \
+                 The file with the mistake is kept next to it, as permissions.toml.broken."
+                    .to_owned(),
+                widget::button::destructive("Reset"),
             ),
             Confirm::RemoveKey(p) => (
                 "Remove the API key?",
@@ -1269,13 +1383,25 @@ impl Panel {
                 if let Err(e) = save_extra_isolation(&self.extra_isolation) {
                     self.error = Some(format!("Could not save: {e}"));
                 }
+                // The tier changes what an app can be given; say so in the file.
+                self.load_permissions();
             }
-            Message::Permission(app, cap, allow) => {
-                self.decisions.set(&app, &cap, if allow { Decision::Allow } else { Decision::Deny });
-                if let Some(p) = Decisions::default_path()
-                    && let Err(e) = self.decisions.save(&p)
-                {
-                    self.error = Some(format!("Could not save: {e}"));
+            Message::Permission(app, key, value) => {
+                if let Some(f) = self.programs.iter().find(|a| a.id == app).cloned() {
+                    let programs = self.programs.clone();
+                    if let Err(e) = self.policy.edit(&programs, |p| p.set(&f, key, value)) {
+                        self.error = Some(format!("Could not save: {e}"));
+                    }
+                }
+            }
+            Message::PrivacyBy(by) => self.privacy_by = by,
+            Message::OpenPermissionsFile => {
+                if let Some(p) = self.policy.user_path.clone() {
+                    if !p.exists() {
+                        let programs = self.programs.clone();
+                        let _ = self.policy.edit(&programs, |_| Ok(()));
+                    }
+                    let _ = std::process::Command::new("xdg-open").arg(p).spawn();
                 }
             }
             Message::Cancel => self.confirm = None,
@@ -1284,6 +1410,22 @@ impl Panel {
                     Some(Confirm::Restore(repo)) => self.start(Request::Restore { repo }),
                     Some(Confirm::SignOut) => self.start(Request::BackupSignOut),
                     Some(Confirm::TestingUpdates) => self.start(Request::SetTestingUpdates { on: true }),
+                    Some(Confirm::ResetPermissions) => {
+                        if let Some(path) = self.policy.user_path.clone()
+                            && self.policy.user.broken
+                        {
+                            let _ = std::fs::copy(&path, path.with_extension("toml.broken"));
+                        }
+                        let programs = self.programs.clone();
+                        match self.policy.edit(&programs, |p| {
+                            p.reset(None);
+                            Ok(())
+                        }) {
+                            Ok(()) => self.notice = Some("Every app asks again the next time it opens.".into()),
+                            Err(e) => self.error = Some(format!("Could not reset: {e}")),
+                        }
+                        Task::none()
+                    }
                     Some(Confirm::AccountRestore(_)) => self.account.update(account::Msg::Restore).map(account_action),
                     Some(Confirm::AccountSignOut) => self.account.update(account::Msg::SignOut).map(account_action),
                     Some(Confirm::RemoveKey(p)) => {

@@ -56,6 +56,9 @@ a result: if a tool did not confirm something, do not say it happened.
 - Do what was asked, and only that. If a request is ambiguous or would remove something the \
 person may want, ask first in your reply instead of acting.
 - Changing tools or services rebuilds the system and takes minutes; say so.
+- Asked what an app can do or could break, use list_permissions and answer from its exact values, \
+risk and worst_case: say what it can reach and how far, and say plainly what Iliada cannot restrict yet \
+(\"unrestricted\"). Suggest narrowing when an app has more than it needs; set_permission always asks the person.
 - Some actions may be declined by the person; respect that and do not retry them.
 - When done, say plainly what you did and what (if anything) failed, in a sentence or two. \
 Iliada's users are not technical: no jargon, no commands.
@@ -265,6 +268,9 @@ impl Assistant {
                 let result = if tools::needs_full_access(name) && !self.full_access {
                     Err(anyhow::anyhow!("{name} needs full access (Settings → Assistant)"))
                 } else if tools::acts(name) {
+                    // What it needs to be undone later (a permission's old value).
+                    let prepared = tools::prepare(name, input);
+                    let input = &prepared;
                     let action = tools::describe(name, input);
                     let ask = tools::asks_first(name, self.mode, &self.on_its_own);
                     if ask && !ui.approve(&action).await {

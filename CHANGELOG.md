@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **What every app may use, in one readable file.**
+  `~/.config/iliada/permissions.toml` lists each app (and each built-in
+  program and command-line tool) with what it can touch, how far, and its
+  worst case in plain words, generated from its permissions so the words
+  always match. Folders can now be read-only, and the internet can be
+  turned off per app. What Iliada cannot restrict yet (the clipboard,
+  screen capture, running in the background) says "not restricted yet"
+  instead of looking safe. A file with a mistake denies everything until
+  it is fixed. Administrators can narrow any of it for everyone in
+  `/etc/iliada/permissions.toml`.
+- **Settings → Privacy** shows a card per app (what it can touch, worst
+  case) and every permission by app or by permission. **agora** shows the
+  same card before you install.
+- **`iliada permissions`** lists, shows, sets, resets and checks
+  permissions; `--json` is for agents (docs/permissions-schema.md).
+  **Homer** can explain what an app could do and propose changes, which
+  you confirm.
+
 - **Dark mode is the default** for a new person and the live installer
   session: the desktop, GTK apps and the login screen start dark, in
   the bronze-on-navy look. A choice already saved in Appearance is

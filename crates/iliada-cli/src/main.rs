@@ -9,6 +9,7 @@
 //!   iliada ask "install firefox and turn on ssh"      (or just `iliada ask` for a conversation)
 //!   iliada assistant status | on | off | mode ask|auto | model <id> | key
 //!   iliada assistant email status | set <address> [--server …] | test <to> | remove
+//!   iliada permissions [list | show <app> | set <app> <capability> <value> | reset [<app>] | check] [--json]
 //!   iliada report                                    (this computer's hardware, to share for help)
 //!
 //! Apps are `.app` bundles from agora (no rebuild, no root). Everything
@@ -16,6 +17,7 @@
 //! administrator; no sudo. Everything here is also in the Settings app.
 
 mod account;
+mod permissions;
 mod report;
 
 use std::io::IsTerminal;
@@ -35,6 +37,7 @@ Examples:
   iliada remove python            remove it again
   iliada system update            update Iliada itself
   iliada ask \"turn on dark mode\"  ask Homer, the assistant
+  iliada permissions show gimp    what an app may use, and its worst case
 
 Everything here is also in agora and in Settings.";
 
@@ -122,6 +125,8 @@ enum Cmd {
         #[command(subcommand)]
         cmd: AssistantCmd,
     },
+    /// What every app may use: list, show, set, reset, check, limit (`--json` for agents).
+    Permissions(permissions::Args),
     /// Save a report on this computer's hardware (graphics, screens, Wi-Fi,
     /// sound, sleep, errors) as a text file, to share when something doesn't work.
     Report {
@@ -460,6 +465,7 @@ async fn main() -> Result<()> {
         Cmd::Backup { cmd } => backup(cmd, v).await?,
         Cmd::Ask { text } => ask(text.join(" ")).await?,
         Cmd::Assistant { cmd } => assistant(cmd, v).await?,
+        Cmd::Permissions(args) => permissions::run(args).await?,
     }
     Ok(())
 }

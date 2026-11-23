@@ -130,7 +130,7 @@ separate VMs comes from Qubes OS (Xen, a VM per group of apps); Iliada keeps
 the light sandbox for every app and makes the VM a per-app switch. GPU acceleration
 (virtio-gpu cross-domain) is later work; waypipe already carries windows.
 
-**Permissions** (ADR 0006):
+**Permissions** (ADR 0006, ADR 0007):
 
 1. Each app declares an *upper bound* in `Permissions.toml`, with a purpose
    string per capability: in its recipe (`folders = ["pictures"]`), or
@@ -140,10 +140,19 @@ the light sandbox for every app and makes the VM a per-app switch. GPU accelerat
    sandbox exists) asks about each declared folder, the camera and the
    microphone in `iliada-prompt`, a window Iliada draws; the app cannot draw
    or answer it. Sound is granted without asking, as on macOS.
-3. Answers are stored per user in `~/.local/share/iliada/permissions.toml`,
-   outside every sandbox, and can be changed in Settings → Privacy.
+3. Answers are stored per user in `~/.config/iliada/permissions.toml`,
+   outside every sandbox: one readable file with a table per app, a
+   generated `risk` list and `worst_case`, and every capability marked as
+   enforced, fixed or **not restricted yet** (clipboard, screen capture,
+   running in the background). It can be changed in Settings → Privacy (by
+   app or by permission), with `iliada permissions`, by hand, or by Homer
+   after the person confirms. The computer's limits in
+   `/etc/iliada/permissions.toml` only narrow, for everyone. A broken file
+   denies everything it decides. Agents read `iliada permissions --json`
+   ([permissions-schema.md](permissions-schema.md)); agora shows the same
+   card before install.
 4. Only what was allowed is put into the sandbox: the folder at
-   `~/<Folder>` in the app's home, the camera devices, the sound server's
+   `~/<Folder>` in the app's home (bound read-only when that is the answer), the camera devices, the sound server's
    sockets. Files opened with an app (double-click in Files) are bound one by
    one at their own paths: the app sees exactly those files.
 5. Known limit: the sound server's socket carries playback and recording,
@@ -153,11 +162,13 @@ the light sandbox for every app and makes the VM a per-app switch. GPU accelerat
 The broker (`iliada-broker`, `iliada-ipc`, ADR 0003) serves apps that ask at
 run time over their socket or vsock (Iliada-aware apps, micro-VMs): identity
 is the socket the request arrived on, grants are Once / While running /
-Always, and every decision is appended to `audit.jsonl`.
+Always, every decision is appended to `audit.jsonl`, and the computer's
+limits in `/etc/iliada/permissions.toml` are checked first.
 
 **Network** is not a runtime permission. It is decided when the sandbox is
-created (`NetworkPolicy::None | Nat`), because "ask for network" prompts
-train users to click Allow.
+created (`NetworkPolicy::None | Nat`): on if the app declares it and the
+person has not turned it off in Privacy, without a prompt, because "ask for
+network" prompts train users to click Allow.
 
 **Verified boot** comes from Pillar 1: dm-verity on the store plus a signed UKI.
 

@@ -53,6 +53,10 @@ pub enum Request {
     /// `settings.toml` and `apps.toml`, kept by the person's Iliada account),
     /// apply them and install the apps.
     RestoreSettings { settings: String, apps: String },
+    /// Set or remove one of the computer's limits on what apps may use
+    /// (`/etc/iliada/permissions.toml`, ADR 0007). `app` is an app id or
+    /// `all`; `limit` is `deny`, `read-only` (folders) or `None` to remove.
+    SetPermissionLimit { app: String, capability: String, limit: Option<String> },
 }
 
 impl Request {
@@ -72,7 +76,8 @@ impl Request {
             Request::Apply
             | Request::Restore { .. }
             | Request::RestoreSettings { .. }
-            | Request::BackupEnable { .. } => "org.iliada.system.configure",
+            | Request::BackupEnable { .. }
+            | Request::SetPermissionLimit { .. } => "org.iliada.system.configure",
             _ => return None,
         })
     }
@@ -94,6 +99,7 @@ impl Request {
             Request::Restore { .. } => "Restoring a backup",
             Request::BackupSignOut => "Signing out",
             Request::RestoreSettings { .. } => "Bringing back your apps and tools",
+            Request::SetPermissionLimit { .. } => "Changing what apps may use",
         }
     }
 }
