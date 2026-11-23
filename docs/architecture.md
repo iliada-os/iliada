@@ -384,8 +384,9 @@ repository run the checks that used to live there (`.github/workflows`):
   `clippy` (`-D warnings`) and the workspace tests, inside `nix develop`,
   so the toolchain matches a developer shell. Cargo's crate cache is
   reused between runs.
-* **Dev VM** (`vm.yml`), on pushes to `main` and from the Actions tab
-  (not every pull request): builds
+* **Dev VM** (`vm.yml`), on pushes to `main`, from the Actions tab, and
+  on pull requests that change the boot script or this workflow (not
+  every pull request): builds
   `nixosConfigurations.dev-vm-x86_64.config.system.build.vm`, boots it in
   QEMU with KVM, waits for the COSMIC desktop (`cosmic-comp`) and stores
   screenshots as artifacts. The job fails if the desktop never comes up.
