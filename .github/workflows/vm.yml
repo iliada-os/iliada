@@ -28,7 +28,8 @@ permissions:
 
 concurrency:
   group: vm-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel a main build: it fills the binary cache. Only superseded PR runs are cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   boot:
