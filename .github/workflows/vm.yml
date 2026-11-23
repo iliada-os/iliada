@@ -6,6 +6,13 @@ name: Dev VM
 on:
   push:
     branches: [main]
+  # Not every pull request: only when the boot path itself changed, so a PR
+  # that introduces or edits this workflow can prove the desktop comes up.
+  pull_request:
+    paths:
+      - ".github/workflows/vm.yml"
+      - "scripts/ci-boot-vm.sh"
+      - "nix/hosts/dev-vm.nix"
   workflow_dispatch:
 
 permissions:
