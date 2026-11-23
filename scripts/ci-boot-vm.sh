@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Boot the Iliada dev VM under QEMU/KVM, wait for the COSMIC desktop, take
-# screenshots (QEMU monitor screendump), and check that core services are up.
+# screenshots, and check that core services are up.
 # Used by .github/workflows/vm.yml. Login shell is fish: scripts go through bash -s.
 set -euo pipefail
 
@@ -17,20 +17,24 @@ if [[ ! -x $run_vm ]]; then
   exit 1
 fi
 
-monitor="$work/qemu-monitor.sock"
+qmp="$work/qmp.sock"
+control="$work/ssh-control.sock"
 disk="$work/iliada-dev.qcow2"
 export NIX_DISK_IMAGE=$disk
 export TMPDIR=$work
-# Do not pass -m: NixOS pins a matching memory-backend-memfd (virtiofs) from
-# virtualisation.memorySize (4 GiB on dev-vm-ci). A second -m makes QEMU
+# Do not pass -m: the wrapper already sets -m from virtualisation.memorySize,
+# and virtiofs pins a matching memory-backend-memfd. A second -m makes QEMU
 # exit with "memory size does not match the size of the memory backend".
-export QEMU_OPTS="-monitor unix:${monitor},server,nowait"
+export QEMU_OPTS="-qmp unix:${qmp},server,nowait"
 
 vm_alive() {
   kill -0 "$vm_pid" 2>/dev/null
 }
 
 cleanup() {
+  if [[ -n ${control-} && -S $control ]]; then
+    ssh -O exit -o ControlPath="$control" dummy 2>/dev/null || true
+  fi
   if [[ -n ${vm_pid-} ]] && kill -0 "$vm_pid" 2>/dev/null; then
     kill -TERM -"$vm_pid" 2>/dev/null || kill -TERM "$vm_pid" 2>/dev/null || true
     sleep 2
@@ -66,6 +70,9 @@ ssh_base=(
   -o NumberOfPasswordPrompts=1
   -o ConnectTimeout=5
   -o ServerAliveInterval=15
+  -o ControlMaster=auto
+  -o ControlPath="$control"
+  -o ControlPersist=60
   -o LogLevel=ERROR
   iliada@127.0.0.1
 )
@@ -74,37 +81,205 @@ guest() {
   "${ssh_base[@]}" 'bash -s' "$@"
 }
 
+# QEMU QMP screendump, then localhost VNC (CI VM has no VNC password).
 screendump() {
   local dest=$1
-  python3 - "$monitor" "$dest" <<'PY'
-import socket, sys, time
-monitor, dest = sys.argv[1], sys.argv[2]
-s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-s.settimeout(10)
-for _ in range(50):
-    try:
-        s.connect(monitor)
-        break
-    except OSError:
-        time.sleep(0.2)
-else:
-    sys.exit("qemu monitor socket never appeared")
+  python3 - "$qmp" "$dest" <<'PY' || true
+import json, os, socket, struct, sys, time
+
+qmp_path, dest = sys.argv[1], sys.argv[2]
+
+
+def log(msg):
+    print(f"screendump: {msg}", flush=True)
+
+
+def qmp_screenshot(path, dest):
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(10)
+    for _ in range(50):
+        try:
+            s.connect(path)
+            break
+        except OSError:
+            time.sleep(0.2)
+    else:
+        log("QMP socket never appeared")
+        return False
+
+    buf = bytearray()
+
+    def read_obj():
+        nonlocal buf
+        while True:
+            try:
+                text = buf.decode("utf-8")
+                obj, idx = json.JSONDecoder().raw_decode(text.lstrip())
+                rest = text.lstrip()[idx:].lstrip()
+                buf[:] = rest.encode()
+                return obj
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                chunk = s.recv(4096)
+                if not chunk:
+                    raise RuntimeError("QMP closed")
+                buf.extend(chunk)
+
+    greeting = read_obj()
+    if "QMP" not in greeting:
+        log(f"unexpected QMP greeting: {greeting!r}")
+        s.close()
+        return False
+    s.sendall(b'{"execute":"qmp_capabilities"}\n')
+    while True:
+        msg = read_obj()
+        if msg.get("error"):
+            log(f"qmp_capabilities failed: {msg}")
+            s.close()
+            return False
+        if "return" in msg:
+            break
+    base, ext = os.path.splitext(dest)
+    for fmt, out in (("png", dest), ("ppm", base + ".ppm")):
+        cmd = {
+            "execute": "screendump",
+            "arguments": {"filename": out, "format": fmt},
+        }
+        s.sendall((json.dumps(cmd) + "\n").encode())
+        while True:
+            msg = read_obj()
+            if msg.get("event"):
+                continue
+            break
+        if msg.get("error"):
+            log(f"QMP {fmt} rejected: {msg['error']}")
+            continue
+        time.sleep(0.4)
+        if os.path.isfile(out) and os.path.getsize(out) > 0:
+            log(f"wrote {out} via QMP ({os.path.getsize(out)} bytes)")
+            s.close()
+            return True
+        log(f"QMP {fmt} returned but {out} is missing or empty")
+    s.close()
+    return False
+
+
+def vnc_screenshot(dest):
+    s = socket.create_connection(("127.0.0.1", 5900), 8)
+    s.settimeout(20)
+    ver = s.recv(12)
+    if not ver.startswith(b"RFB "):
+        log(f"not a VNC server: {ver!r}")
+        s.close()
+        return False
+    s.sendall(b"RFB 003.008\n")
+    nsec = s.recv(1)
+    if not nsec:
+        log("VNC closed during security types")
+        s.close()
+        return False
+    types = s.recv(nsec[0])
+    if 1 not in types:
+        log(f"VNC has no None security (types={list(types)}); need passwordless VNC")
+        s.close()
+        return False
+    s.sendall(bytes([1]))
+    result = struct.unpack(">I", s.recv(4))[0]
+    if result != 0:
+        reason_len = struct.unpack(">I", s.recv(4))[0] if result else 0
+        reason = s.recv(reason_len) if reason_len else b""
+        log(f"VNC security failed ({result}): {reason!r}")
+        s.close()
+        return False
+    s.sendall(bytes([1]))  # shared
+    hdr = b""
+    while len(hdr) < 24:
+        chunk = s.recv(24 - len(hdr))
+        if not chunk:
+            log("VNC closed during ServerInit")
+            s.close()
+            return False
+        hdr += chunk
+    width, height = struct.unpack(">HH", hdr[:4])
+    name_len = struct.unpack(">I", hdr[20:24])[0]
+    leftover = hdr[24:]
+    while len(leftover) < name_len:
+        leftover += s.recv(name_len - len(leftover))
+    # 32-bit little-endian RGB, raw encoding only.
+    pixfmt = struct.pack(
+        ">BBBBHHHBBBxxx", 32, 24, 0, 1, 255, 255, 255, 16, 8, 0
+    )
+    s.sendall(b"\x00\x00\x00\x00" + pixfmt)
+    s.sendall(struct.pack(">BBH", 2, 0, 1) + struct.pack(">i", 0))
+    s.sendall(struct.pack(">BBHHHH", 3, 0, 0, 0, width, height))
+    pixels = bytearray(width * height * 4)
+    got = 0
+    deadline = time.time() + 15
+    while got < width * height and time.time() < deadline:
+        kind = s.recv(1)
+        if not kind:
+            break
+        if kind[0] != 0:
+            log(f"unexpected VNC message type {kind[0]}")
+            s.close()
+            return False
+        s.recv(1)
+        nrect_b = b""
+        while len(nrect_b) < 2:
+            nrect_b += s.recv(2 - len(nrect_b))
+        nrect = struct.unpack(">H", nrect_b)[0]
+        for _ in range(nrect):
+            rh = b""
+            while len(rh) < 12:
+                chunk = s.recv(12 - len(rh))
+                if not chunk:
+                    log("VNC closed during rectangle")
+                    s.close()
+                    return False
+                rh += chunk
+            x, y, w, h, enc = struct.unpack(">HHHHi", rh)
+            if enc != 0:
+                log(f"unsupported VNC encoding {enc}")
+                s.close()
+                return False
+            need = w * h * 4
+            data = b""
+            while len(data) < need:
+                chunk = s.recv(need - len(data))
+                if not chunk:
+                    log("VNC closed during pixels")
+                    s.close()
+                    return False
+                data += chunk
+            for row in range(h):
+                src = row * w * 4
+                dst = ((y + row) * width + x) * 4
+                pixels[dst : dst + w * 4] = data[src : src + w * 4]
+            got += w * h
+    s.close()
+    if got < width * height:
+        log(f"VNC incomplete frame ({got}/{width * height} pixels)")
+        return False
+    ppm = os.path.splitext(dest)[0] + ".ppm"
+    with open(ppm, "wb") as f:
+        f.write(f"P6\n{width} {height}\n255\n".encode())
+        for i in range(0, len(pixels), 4):
+            f.write(bytes([pixels[i + 2], pixels[i + 1], pixels[i]]))
+    log(f"wrote {ppm} via VNC ({os.path.getsize(ppm)} bytes, {width}x{height})")
+    return True
+
+
+ok = False
 try:
-    s.recv(4096)
-except socket.timeout:
-    pass
-# PNG if this QEMU knows it; fall back to PPM.
-for cmd in (f"screendump {dest} png\n", f"screendump {dest}\n"):
-    s.sendall(cmd.encode())
-    time.sleep(1.5)
+    ok = qmp_screenshot(qmp_path, dest)
+except Exception as e:
+    log(f"QMP failed: {e}")
+if not ok:
     try:
-        reply = s.recv(4096).decode("utf-8", "replace")
-    except socket.timeout:
-        reply = ""
-    if "unknown" in reply.lower() or "error" in reply.lower():
-        continue
-    break
-s.close()
+        ok = vnc_screenshot(dest)
+    except Exception as e:
+        log(f"VNC failed: {e}")
+if not ok:
+    sys.exit(1)
 PY
 }
 
@@ -136,10 +311,16 @@ while (( SECONDS < deadline )); do
     tail -n 200 "$work/qemu.log" >&2 || true
     exit 1
   fi
+  # cosmic-comp is wrapped (.cosmic-comp-wrapped); comm is truncated to 15
+  # chars, so pgrep -x cosmic-comp never matches. Scan command lines instead.
+  # A ControlMaster keeps this from opening a new logind session each poll.
   if guest <<'EOF' | grep -q cosmic-comp-up
-if pgrep -u iliada -x cosmic-comp >/dev/null; then
+# [c]osmic-comp: this grep's own argv must not match.
+for c in /proc/[0-9]*/cmdline; do
+  tr '\0' ' ' < "$c" 2>/dev/null | grep -q '[c]osmic-comp' || continue
   echo cosmic-comp-up
-fi
+  break
+done
 EOF
   then
     desktop_up=1
@@ -156,12 +337,24 @@ echo '=== failed units ==='
 systemctl --failed --no-legend --plain || true
 echo '=== display-manager ==='
 systemctl status display-manager --no-pager -l || true
-echo '=== cosmic-greeter ==='
-systemctl status cosmic-greeter --no-pager -l || true
-echo '=== processes ==='
-ps -u iliada -o pid,cmd || true
-echo '=== journal (last 150) ==='
-journalctl -b -n 150 --no-pager || true
+echo '=== greetd ==='
+systemctl status greetd --no-pager -l || true
+journalctl -u greetd -b --no-pager -n 80 || true
+echo '=== cosmic-session ==='
+journalctl -t cosmic-session -b --no-pager -n 80 || true
+echo '=== loginctl ==='
+loginctl || true
+echo '=== dri ==='
+ls -l /dev/dri 2>/dev/null || true
+echo '=== processes matching cosmic/greetd/session ==='
+for c in /proc/[0-9]*/cmdline; do
+  cmd=$(tr '\0' ' ' < "$c" 2>/dev/null) || continue
+  case $cmd in
+    *cosmic*|*greetd*|*start-cosmic*) echo "${c#/proc/} $cmd";;
+  esac
+done
+echo '=== comms matching cosmic ==='
+grep -H . /proc/[0-9]*/comm 2>/dev/null | grep -i cosmic || true
 EOF
   exit 1
 fi
@@ -190,7 +383,7 @@ echo '=== failed units ==='
 systemctl --failed --no-legend --plain || true
 echo '=== session ==='
 loginctl || true
-pgrep -a -u iliada cosmic || true
+pgrep -a -f cosmic || true
 echo "CORE_FAIL=$fail"
 EOF
 guest_status=${PIPESTATUS[0]}

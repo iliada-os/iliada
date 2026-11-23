@@ -390,11 +390,14 @@ repository run the checks that used to live there (`.github/workflows`):
   `nixosConfigurations.dev-vm-ci-x86_64` (same as the mutable dev VM,
   with 4 GiB / 2 cores so QEMU's `-m` and the virtiofs memfd match on a
   hosted runner), boots it in QEMU with KVM, waits for the COSMIC desktop
-  (`cosmic-comp`) and stores screenshots as artifacts. The job fails if
-  the desktop never comes up. Over SSH (host port 2222, user `iliada` /
-  password `iliada`; the login shell is fish, so scripts are piped with
-  `bash -s`) it also checks that `iliada-broker`, `iliada-appd` and
-  `iliada-system` are active.
+  (`cosmic-comp` on the process command line: the compositor is a wrapped
+  binary, and Iliada's `pgrep` is uutils) and stores screenshots as
+  artifacts (QEMU QMP, then loopback VNC). The job fails if the desktop
+  never comes up. Over SSH (host port 2222, user `iliada` / password
+  `iliada`; one multiplexed connection, because a new session every few
+  seconds drowns the journal; the login shell is fish, so scripts are
+  piped with `bash -s`) it also checks that `iliada-broker`,
+  `iliada-appd` and `iliada-system` are active.
 * **ISO** (`iso.yml`), from the Actions tab: builds the installer ISO and
   prints its size. The image is not uploaded.
 
