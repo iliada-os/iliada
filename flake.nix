@@ -98,7 +98,11 @@
 
       devShells = forAll allSystems (pkgs: {
         default = pkgs.mkShell {
-          packages = with pkgs; [ cargo rustc rustfmt clippy rust-analyzer ]
+          # zstd + pkg-config: the workspace links libzstd (Store, account, catalog).
+          # git: iliada-system's tests drive a configuration repository.
+          nativeBuildInputs = with pkgs; [ pkg-config ];
+          buildInputs = with pkgs; [ zstd ];
+          packages = with pkgs; [ cargo rustc rustfmt clippy rust-analyzer git ]
             # glib.dev: glib-compile-schemas for the Package Translator / catalog builder.
             ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ patchelf cloud-hypervisor virtiofsd bubblewrap glib.dev ];
         };

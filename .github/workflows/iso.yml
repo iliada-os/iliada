@@ -1,0 +1,48 @@
+# Optional: build the installer ISO and print its size. Not uploaded.
+# Substituters are read-only. No secrets.
+name: ISO
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  iso:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Free disk space
+        run: |
+          df -h
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /usr/local/.ghcup \
+            /usr/share/swift \
+            /usr/local/share/powershell \
+            /opt/hostedtoolcache
+          sudo docker system prune -af || true
+          df -h
+
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            extra-substituters = https://cache.iliada-os.com
+            extra-trusted-public-keys = cache.iliada-os.com-1:m3Nzs56JqFzorWcJP9N49LnaeHNyzdodpQE26xtwQXk=
+
+      - name: Build the installer ISO
+        run: nix build -L .#installer-iso --out-link result-iso
+
+      - name: Report ISO size
+        run: |
+          ls -lh result-iso/iso/
+          echo
+          du -h result-iso/iso/*.iso
+          echo
+          df -h

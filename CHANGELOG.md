@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Checks run on GitHub** when the code changes, so they don't depend on
+  the home build machine being on: formatting, warnings and tests every
+  time, and a picture of the development VM's desktop on the main branch.
 - **agora** is the name of the app marketplace (it was called Store). Docks
   from before this update show agora in Store's place.
 - **One look for every Iliada icon**: agora, Settings, Homer, the Setup
