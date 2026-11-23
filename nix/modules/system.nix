@@ -100,6 +100,10 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # Ctrl+O at a shell prompt: Homer, working in that folder (`homer`).
+    programs.fish.interactiveShellInit = "source ${../shell/homer.fish}";
+    programs.bash.interactiveShellInit = "source ${../shell/homer.bash}";
+
     assertions = [{
       assertion = !cfg.firstBoot.enable || iliada != null;
       message = "iliada.system.firstBoot needs the Iliada flake (build the system with iliada.lib.iliadaSystem)";

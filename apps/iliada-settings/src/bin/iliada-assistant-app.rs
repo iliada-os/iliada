@@ -10,6 +10,11 @@
 //!   Iliada…" field and the answer below it; Esc closes. Its conversations
 //!   are saved too, and "Open in Homer" continues one in the app.
 //!
+//! The sidebar keeps the history in sections: **Chats** (from the app, the
+//! panel and search), **Terminal** (Homer mode, by folder) and **Tasks**
+//! (quick one-shot requests, kept for a day, folded away), with a search
+//! field above. History can be turned off in Settings → Homer.
+//!
 //! In Ask mode each action appears as a card with Allow / Don't Allow; in
 //! Auto mode actions run and are listed as they happen. One window of each
 //! kind runs: starting it again brings it forward.
@@ -23,7 +28,9 @@ use cosmic::iced::widget::scrollable::{RelativeOffset, snap_to};
 use cosmic::iced::{Alignment, Length, Size, Subscription};
 use cosmic::widget::{self, nav_bar, settings};
 use cosmic::{ApplicationExt, Core, Element, executor};
-use iliada_assistant::history::{Conversation, Line, LineKind, Summary};
+use iliada_assistant::history::{
+    Conversation, ConversationStore, Line, LineKind, Source, Summary, sections, short_path,
+};
 use iliada_assistant::{Activity, Assistant};
 use iliada_system::client;
 use iliada_system::protocol::{AssistantMode, AssistantSettings, model_name};
@@ -44,6 +51,8 @@ const SUGGESTIONS: [&str; 6] = [
 struct Flags {
     panel: bool,
     open: Option<String>,
+    /// `--from search`: the panel was opened from search.
+    search: bool,
 }
 
 fn parse_flags() -> Flags {
@@ -53,6 +62,7 @@ fn parse_flags() -> Flags {
         match a.as_str() {
             "--panel" => f.panel = true,
             "--open" => f.open = args.next(),
+            "--from" => f.search = args.next().as_deref() == Some("search"),
             _ => {}
         }
     }
@@ -113,6 +123,10 @@ enum Nav {
     New,
     Activity,
     Conversation(String),
+    /// A section's name (Chats, a Terminal folder): opens nothing.
+    Heading,
+    /// Tasks: shows or hides them.
+    Tasks,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -147,6 +161,14 @@ enum Message {
     /// The undo's outcome, and the conversation the action came from.
     Undone(Result<String, String>, Option<String>),
     Dismiss,
+    /// Typed in the sidebar's search field.
+    Search(String),
+    /// Show or hide the Tasks section.
+    ToggleTasks,
+    /// "Clear history…": asks first.
+    ClearAll,
+    ClearAllConfirmed,
+    CancelClear,
     /// Esc (the panel).
     Close,
     /// Started again: come forward (and open this conversation).
@@ -171,6 +193,13 @@ struct App {
     page: Page,
     nav: nav_bar::Model,
     conversations: Vec<Summary>,
+    /// What the sidebar is filtered by.
+    query: String,
+    show_tasks: bool,
+    /// "Delete all conversations?" is showing.
+    confirm_clear: bool,
+    /// New conversations start here (the panel: Panel or Search).
+    source: Source,
     activity: Vec<Activity>,
     changes: Option<Result<Vec<iliada_system::Change>, String>>,
     undoing: Option<usize>,
@@ -243,6 +272,10 @@ impl App {
         match Assistant::new(&settings) {
             Ok(mut a) => {
                 a.set_conversation(&self.conversation.id);
+                // A Terminal conversation goes on in its folder.
+                if let Some(dir) = self.conversation.source.cwd().map(std::path::Path::new).filter(|d| d.is_dir()) {
+                    a.set_workdir(dir);
+                }
                 if !self.conversation.messages.is_empty() {
                     a.restore(self.conversation.messages.clone(), &self.conversation.model);
                 }
@@ -304,10 +337,66 @@ impl App {
         if self.page == Page::Activity {
             act.activate();
         }
-        for (i, c) in self.conversations.iter().enumerate() {
-            let e = self.nav.insert().text(c.title.clone()).data(Nav::Conversation(c.id.clone())).divider_above(i == 0);
-            if self.page == Page::Chat && c.id == self.conversation.id {
+        let open = (self.page == Page::Chat).then_some(self.conversation.id.as_str());
+        let list: Vec<Summary> = if self.query.trim().is_empty() {
+            self.conversations.clone()
+        } else {
+            self.conversations.iter().filter(|c| c.matches(&self.query)).cloned().collect()
+        };
+        let searching = !self.query.trim().is_empty();
+        if searching && list.is_empty() {
+            self.nav.insert().text("No conversation matches").data(Nav::Heading).divider_above(true);
+        }
+        if !ConversationStore::open().keeps() {
+            self.nav
+                .insert()
+                .text("History is off")
+                .icon(widget::icon::from_name("security-high-symbolic"))
+                .data(Nav::Heading)
+                .divider_above(true);
+        }
+        let s = sections(list);
+        let add = |nav: &mut nav_bar::Model, c: &Summary| {
+            let e = nav.insert().text(c.title.clone()).data(Nav::Conversation(c.id.clone()));
+            if open == Some(c.id.as_str()) {
                 e.activate();
+            }
+        };
+        if !s.chats.is_empty() {
+            self.nav
+                .insert()
+                .text("Chats")
+                .icon(widget::icon::from_name("chat-symbolic"))
+                .data(Nav::Heading)
+                .divider_above(true);
+            for c in &s.chats {
+                add(&mut self.nav, c);
+            }
+        }
+        for (dir, list) in &s.terminal {
+            self.nav
+                .insert()
+                .text(format!("Terminal · {}", short_path(dir)))
+                .icon(widget::icon::from_name("utilities-terminal-symbolic"))
+                .data(Nav::Heading)
+                .divider_above(true);
+            for c in list {
+                add(&mut self.nav, c);
+            }
+        }
+        if !s.tasks.is_empty() {
+            // Folded away unless asked for (or searched for, or open).
+            let shown = self.show_tasks || searching || s.tasks.iter().any(|c| open == Some(c.id.as_str()));
+            self.nav
+                .insert()
+                .text(format!("Tasks ({}) {}", s.tasks.len(), if shown { "▾" } else { "▸" }))
+                .icon(widget::icon::from_name("object-select-symbolic"))
+                .data(Nav::Tasks)
+                .divider_above(true);
+            if shown {
+                for c in &s.tasks {
+                    add(&mut self.nav, c);
+                }
             }
         }
     }
@@ -513,7 +602,7 @@ impl App {
             .push(widget::space::horizontal())
             .spacing(spacing.space_s)
             .align_y(Alignment::Center);
-        if !self.conversation.lines.is_empty() && !self.busy {
+        if !self.conversation.lines.is_empty() && !self.busy && ConversationStore::open().keeps() {
             footer = footer.push(widget::button::text("Open in Homer").on_press(Message::OpenInApp));
         }
         footer =
@@ -542,7 +631,10 @@ impl App {
         } else {
             self.not_ready()
         };
-        let mut col = widget::column::with_capacity(4).spacing(spacing.space_s);
+        let mut col = widget::column::with_capacity(5).spacing(spacing.space_s);
+        if self.confirm_clear {
+            col = col.push(self.confirm_clear_card());
+        }
         if let Some(n) = self.notice.as_ref().filter(|_| self.assistant.is_some()) {
             col = col.push(self.banner(n));
         }
@@ -552,6 +644,28 @@ impl App {
             .padding([spacing.space_s, spacing.space_l])
             .max_width(900)
             .into()
+    }
+
+    fn confirm_clear_card(&self) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+        widget::container(
+            widget::row::with_capacity(3)
+                .push(
+                    widget::text::body(format!(
+                        "Delete all {} conversations? This can't be undone.",
+                        self.conversations.len()
+                    ))
+                    .width(Length::Fill),
+                )
+                .push(widget::button::standard("Cancel").on_press(Message::CancelClear))
+                .push(widget::button::destructive("Delete All").on_press(Message::ClearAllConfirmed))
+                .spacing(spacing.space_s)
+                .align_y(Alignment::Center),
+        )
+        .padding([spacing.space_xxs, spacing.space_s])
+        .class(cosmic::theme::Container::Card)
+        .width(Length::Fill)
+        .into()
     }
 
     fn banner<'a>(&self, text: &'a str) -> Element<'a, Message> {
@@ -644,8 +758,16 @@ impl cosmic::Application for App {
     }
 
     fn init(core: Core, flags: Flags) -> (Self, Task<Message>) {
-        let conversation =
-            flags.open.as_deref().and_then(|id| Conversation::load(id).ok()).unwrap_or_else(|| Conversation::new(""));
+        let source = match (flags.panel, flags.search) {
+            (true, true) => Source::Search,
+            (true, false) => Source::Panel,
+            (false, _) => Source::App,
+        };
+        let conversation = flags
+            .open
+            .as_deref()
+            .and_then(|id| Conversation::load(id).ok())
+            .unwrap_or_else(|| Conversation::from_source("", source.clone()));
         let mut app = App {
             core,
             panel: flags.panel,
@@ -661,6 +783,10 @@ impl cosmic::Application for App {
             page: Page::Chat,
             nav: nav_bar::Model::default(),
             conversations: if flags.panel { Vec::new() } else { Conversation::list() },
+            query: String::new(),
+            show_tasks: false,
+            confirm_clear: false,
+            source,
             activity: Vec::new(),
             changes: None,
             undoing: None,
@@ -695,23 +821,55 @@ impl cosmic::Application for App {
             Some(Nav::New) => self.update(Message::NewConversation),
             Some(Nav::Activity) => self.update(Message::ShowActivity),
             Some(Nav::Conversation(c)) => self.update(Message::Open(c)),
-            None => Task::none(),
+            Some(Nav::Tasks) => self.update(Message::ToggleTasks),
+            // Keep the open conversation highlighted.
+            Some(Nav::Heading) | None => {
+                self.rebuild_nav();
+                Task::none()
+            }
         }
     }
 
-    fn header_end(&self) -> Vec<Element<'_, Message>> {
-        if self.panel || self.page != Page::Chat || self.conversation.lines.is_empty() {
+    fn header_start(&self) -> Vec<Element<'_, Message>> {
+        if self.panel {
             return Vec::new();
         }
         vec![
-            widget::tooltip(
-                widget::button::icon(widget::icon::from_name("edit-delete-symbolic"))
-                    .on_press_maybe((!self.busy).then_some(Message::DeleteConversation)),
-                widget::text::body("Delete this conversation"),
-                widget::tooltip::Position::Bottom,
-            )
-            .into(),
+            widget::search_input("Search conversations", &self.query)
+                .on_input(Message::Search)
+                .on_clear(Message::Search(String::new()))
+                .width(Length::Fixed(240.0))
+                .into(),
         ]
+    }
+
+    fn header_end(&self) -> Vec<Element<'_, Message>> {
+        if self.panel {
+            return Vec::new();
+        }
+        let mut end = Vec::new();
+        if !self.conversations.is_empty() {
+            end.push(
+                widget::tooltip(
+                    widget::button::icon(widget::icon::from_name("edit-clear-all-symbolic"))
+                        .on_press_maybe((!self.busy).then_some(Message::ClearAll)),
+                    widget::text::body("Clear history"),
+                    widget::tooltip::Position::Bottom,
+                )
+                .into(),
+            );
+        }
+        if self.page != Page::Chat || self.conversation.lines.is_empty() {
+            return end;
+        }
+        end.extend([widget::tooltip(
+            widget::button::icon(widget::icon::from_name("edit-delete-symbolic"))
+                .on_press_maybe((!self.busy).then_some(Message::DeleteConversation)),
+            widget::text::body("Delete this conversation"),
+            widget::tooltip::Position::Bottom,
+        )
+        .into()]);
+        end
     }
 
     fn subscription(&self) -> Subscription<Message> {
@@ -833,7 +991,7 @@ impl cosmic::Application for App {
                     self.rebuild_nav();
                     return Task::none();
                 }
-                return self.start_conversation(Conversation::new(&self.model()));
+                return self.start_conversation(Conversation::from_source(&self.model(), self.source.clone()));
             }
             Message::Open(id) => {
                 if self.busy {
@@ -853,7 +1011,7 @@ impl cosmic::Application for App {
                 if !self.busy {
                     let _ = Conversation::delete(&self.conversation.id);
                     self.conversations = Conversation::list();
-                    return self.start_conversation(Conversation::new(&self.model()));
+                    return self.start_conversation(Conversation::from_source(&self.model(), self.source.clone()));
                 }
             }
             Message::OpenInApp => {
@@ -898,6 +1056,30 @@ impl cosmic::Application for App {
                 return self.load_activity();
             }
             Message::Dismiss => self.notice = None,
+            Message::Search(q) => {
+                self.query = q;
+                self.rebuild_nav();
+            }
+            Message::ToggleTasks => {
+                self.show_tasks = !self.show_tasks;
+                self.rebuild_nav();
+            }
+            Message::ClearAll => {
+                self.confirm_clear = true;
+                self.page = Page::Chat;
+                self.rebuild_nav();
+            }
+            Message::CancelClear => self.confirm_clear = false,
+            Message::ClearAllConfirmed => {
+                self.confirm_clear = false;
+                if !self.busy {
+                    if let Err(e) = ConversationStore::open().clear() {
+                        self.notice = Some(format!("Couldn't clear the history: {e:#}"));
+                    }
+                    self.conversations = Conversation::list();
+                    return self.start_conversation(Conversation::from_source(&self.model(), self.source.clone()));
+                }
+            }
             Message::Close => {
                 // Never in the middle of an action: it would be cut off.
                 if !self.busy {

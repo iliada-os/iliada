@@ -16,6 +16,7 @@
 //! administrator; no sudo. Everything here is also in the Settings app.
 
 mod account;
+mod homer;
 mod report;
 
 use std::io::IsTerminal;
@@ -116,7 +117,15 @@ enum Cmd {
         cmd: BackupCmd,
     },
     /// Ask Homer, the assistant, to do something (no text: a conversation).
-    Ask { text: Vec<String> },
+    Ask {
+        /// Homer mode: Homer working in this folder (Ctrl+O at a shell prompt).
+        #[arg(long)]
+        here: bool,
+        /// With --here: a fresh conversation, not this folder's last one.
+        #[arg(long)]
+        new: bool,
+        text: Vec<String>,
+    },
     /// Homer's settings (the assistant).
     Assistant {
         #[command(subcommand)]
@@ -458,7 +467,8 @@ async fn main() -> Result<()> {
         }
         Cmd::Account { cmd } => account::run(cmd).await?,
         Cmd::Backup { cmd } => backup(cmd, v).await?,
-        Cmd::Ask { text } => ask(text.join(" ")).await?,
+        Cmd::Ask { here: true, new, text } => homer::run(text.join(" "), new).await?,
+        Cmd::Ask { text, .. } => ask(text.join(" ")).await?,
         Cmd::Assistant { cmd } => assistant(cmd, v).await?,
     }
     Ok(())

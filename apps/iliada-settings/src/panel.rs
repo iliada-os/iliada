@@ -250,6 +250,10 @@ pub enum Message {
     OpenReport,
     /// Open Homer's voice file (made from the default the first time).
     EditVoice,
+    /// Homer keeps conversations, or not.
+    KeepHistory(bool),
+    ClearHistory,
+    ClearHistoryConfirmed,
     Confirmed,
     Cancel,
     Dismiss,
@@ -281,6 +285,10 @@ pub struct Panel {
     report: Option<Option<Result<String, String>>>,
     email: EmailForm,
     account: Account,
+    /// Homer keeps conversations (`~/.config/iliada/homer.toml`).
+    keep_history: bool,
+    /// "Delete all of Homer's conversations?" is showing.
+    confirm_clear_history: bool,
 }
 
 fn load_status() -> Task<Message> {
@@ -768,10 +776,41 @@ impl Panel {
                     )
                     .into(),
             );
+            items.push(self.history_section());
             items.push(self.key_section(&a.model));
             items.push(self.email_section());
         }
         settings::view_column(items).into()
+    }
+
+    /// Whether Homer keeps conversations, and deleting the ones he has.
+    fn history_section(&self) -> Element<'_, Message> {
+        let space = cosmic::theme::spacing();
+        let mut section = settings::section().title("History").add(
+            settings::item::builder("Keep conversations")
+                .description(if self.keep_history {
+                    "Homer keeps your chats on this computer, so you can go back to them: Terminal ones by \
+                     folder. Quick tasks like \"Switch to dark mode\" are kept for a day. Only you can read them."
+                } else {
+                    "Nothing new is kept: each conversation is gone when you close it."
+                })
+                .toggler(self.keep_history, Message::KeepHistory),
+        );
+        let clear: Element<_> = if self.confirm_clear_history {
+            widget::row::with_capacity(2)
+                .push(widget::button::standard("Cancel").on_press(Message::Cancel))
+                .push(widget::button::destructive("Delete All").on_press(Message::ClearHistoryConfirmed))
+                .spacing(space.space_xs)
+                .into()
+        } else {
+            widget::button::standard("Clear History…").on_press(Message::ClearHistory).into()
+        };
+        section = section.add(
+            settings::item::builder("Clear history")
+                .description("Deletes every conversation Homer kept. What he did stays in Activity.")
+                .control(clear),
+        );
+        section.into()
     }
 
     /// The API key for the chosen model's provider: whether one is saved,
@@ -1003,6 +1042,8 @@ impl Panel {
             report: None,
             email: EmailForm::load(),
             account: Account::default(),
+            keep_history: iliada_assistant::history::history_enabled(),
+            confirm_clear_history: false,
         }
     }
 
@@ -1278,7 +1319,10 @@ impl Panel {
                     self.error = Some(format!("Could not save: {e}"));
                 }
             }
-            Message::Cancel => self.confirm = None,
+            Message::Cancel => {
+                self.confirm = None;
+                self.confirm_clear_history = false;
+            }
             Message::Confirmed => {
                 return match self.confirm.take() {
                     Some(Confirm::Restore(repo)) => self.start(Request::Restore { repo }),
@@ -1322,6 +1366,19 @@ impl Panel {
             Message::OpenReport => {
                 if let Some(Some(Ok(path))) = &self.report {
                     let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+                }
+            }
+            Message::KeepHistory(on) => match iliada_assistant::history::set_history_enabled(on) {
+                Ok(()) => self.keep_history = on,
+                Err(e) => self.error = Some(format!("Couldn't change Homer's history setting: {e:#}")),
+            },
+            Message::ClearHistory => self.confirm_clear_history = true,
+            Message::ClearHistoryConfirmed => {
+                self.confirm_clear_history = false;
+                match iliada_assistant::history::ConversationStore::open().clear() {
+                    Ok(0) => self.notice = Some("There were no conversations to delete.".into()),
+                    Ok(n) => self.notice = Some(format!("Deleted {n} conversations.")),
+                    Err(e) => self.error = Some(format!("Couldn't clear Homer's history: {e:#}")),
                 }
             }
             Message::EditVoice => match iliada_assistant::voice_path() {

@@ -146,6 +146,9 @@ pub struct Assistant {
     spend_file: Option<std::path::PathBuf>,
     /// The saved conversation this is (for the activity log).
     conversation: Option<String>,
+    /// Homer mode in the Terminal: the folder it works in (commands start
+    /// there). `None`: the home folder.
+    workdir: Option<std::path::PathBuf>,
 }
 
 impl Assistant {
@@ -189,6 +192,7 @@ impl Assistant {
             log: None,
             spend_file: None,
             conversation: None,
+            workdir: None,
         }
     }
 
@@ -199,6 +203,23 @@ impl Assistant {
     /// Which saved conversation this is: its actions are logged with it.
     pub fn set_conversation(&mut self, id: &str) {
         self.conversation = Some(id.to_owned());
+    }
+
+    /// Works in this folder, for a person in the Terminal: commands start
+    /// there, and the model knows where it is and that commands are welcome.
+    pub fn set_workdir(&mut self, dir: &std::path::Path) {
+        self.system.push_str(&terminal_note(dir, self.full_access));
+        self.workdir = Some(dir.to_owned());
+    }
+
+    /// The folder it works in, if it was given one.
+    pub fn workdir(&self) -> Option<&std::path::Path> {
+        self.workdir.as_deref()
+    }
+
+    /// Whether it may run commands (full access).
+    pub fn full_access(&self) -> bool {
+        self.full_access
     }
 
     /// The conversation so far, as the model sees it (to save it).
@@ -280,7 +301,7 @@ impl Assistant {
                         Err(anyhow::anyhow!("the person declined: {action}"))
                     } else {
                         ui.progress(&format!("{action}…"));
-                        let r = tools::run(&self.store, name, input).await;
+                        let r = tools::run_in(&self.store, name, input, self.workdir.as_deref()).await;
                         // Takes effect in this conversation too, not only the next.
                         if name == "allow_on_its_own" && r.is_ok() {
                             let kind = input["kind"].as_str().unwrap_or("").to_owned();
@@ -305,7 +326,7 @@ impl Assistant {
                         r
                     }
                 } else {
-                    tools::run(&self.store, name, input).await
+                    tools::run_in(&self.store, name, input, self.workdir.as_deref()).await
                 };
                 results.push(match result {
                     Ok(out) => json!({ "type": "tool_result", "tool_use_id": id, "content": out }),
@@ -316,6 +337,21 @@ impl Assistant {
         }
         Ok("I stopped because this was taking too many steps. Tell me what to do next.".into())
     }
+}
+
+/// What the model is told in Homer mode in the Terminal.
+fn terminal_note(dir: &std::path::Path, full_access: bool) -> String {
+    let run = if full_access {
+        "Commands you run with run_command start in that folder; when the person says \"here\" or \"this \
+         project\" they mean it."
+    } else {
+        "You cannot run commands here without full access (Settings → Homer); say so if they ask for one."
+    };
+    format!(
+        "\n- You are in Homer mode in the Terminal, in the folder {}. {run} This person is at a terminal: \
+         naming a command or showing a short one is fine, and answers should be short.",
+        dir.display()
+    )
 }
 
 /// Who emails come from, so the model never signs with an invented name.
@@ -759,6 +795,21 @@ mod tests {
 
     fn sse(events: &[Value]) -> Value {
         Value::String(events.iter().map(|e| format!("event: x\ndata: {e}\n\n")).collect())
+    }
+
+    #[test]
+    fn terminal_mode_knows_its_folder() {
+        let dir = std::path::Path::new("/home/p/code");
+        let api = api::Api::with_url("sk-test".into(), "claude-opus-5-5".into(), "http://127.0.0.1:9".into());
+        let mut a = Assistant::with_parts(api, AssistantMode::Ask, true, test_store());
+        assert_eq!(a.workdir(), None);
+        a.set_workdir(dir);
+        assert_eq!(a.workdir(), Some(dir));
+        assert!(a.system.contains("in the folder /home/p/code. Commands you run"), "{}", a.system);
+        let api = api::Api::with_url("sk-test".into(), "claude-opus-5-5".into(), "http://127.0.0.1:9".into());
+        let mut limited = Assistant::with_parts(api, AssistantMode::Ask, false, test_store());
+        limited.set_workdir(dir);
+        assert!(limited.system.contains("cannot run commands here"));
     }
 
     fn test_store() -> Store {
