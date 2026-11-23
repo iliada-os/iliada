@@ -22,13 +22,32 @@
     </filter>
   </defs>
   <g filter="url(#il-drop)">
-    <g transform="translate(128 124) scale(1.1171) translate(-128.00 -130.00)">
-<rect x="44" y="64" width="168" height="132" rx="12" fill="url(#il-bronze)"/>
-  <rect x="54" y="84" width="148" height="102" rx="6" fill="#0B1630"/>
-  <path fill="none" stroke="#14254A" stroke-width="2" d="M54 76 H202"/>
-  <circle cx="62" cy="74" r="4" fill="#9E1F18"/><circle cx="76" cy="74" r="4" fill="#14254A"/><circle cx="90" cy="74" r="4" fill="#14254A"/>
-  <path fill="none" stroke="#F6D38E" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" d="M78 112 L102 134 L78 156"/>
-  <path fill="none" stroke="url(#il-crest)" stroke-width="9" stroke-linecap="round" d="M116 158 H156"/>
+    <g transform="translate(128 124) scale(0.9576) translate(-140.50 -144.50)">
+<!-- a wax tablet: bronze frame, dark wax with >_ scratched in, a stylus -->
+  <defs>
+    <linearGradient id="tm-wax" x1="0" y1="74" x2="0" y2="182" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4A2C16"/>
+      <stop offset="1" stop-color="#2A170B"/>
+    </linearGradient>
+    <linearGradient id="tm-stylus" x1="0" y1="-7" x2="0" y2="7" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFF1CC"/>
+      <stop offset="0.5" stop-color="#DDA34E"/>
+      <stop offset="1" stop-color="#8A5418"/>
+    </linearGradient>
+  </defs>
+  <rect x="44" y="62" width="168" height="132" rx="12" fill="url(#il-bronze)"/>
+  <rect x="44" y="62" width="168" height="132" rx="12" fill="none" stroke="#8A5418" stroke-width="2.5"/>
+  <rect x="58" y="76" width="140" height="104" rx="5" fill="url(#tm-wax)"/>
+  <path fill="none" stroke="#000" stroke-opacity="0.35" stroke-width="3" d="M60 79 H196"/>
+  <!-- >_ scratched into the wax -->
+  <path fill="none" stroke="#F6D38E" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" d="M82 104 L108 128 L82 152"/>
+  <path fill="none" stroke="url(#il-crest)" stroke-width="11" stroke-linecap="round" d="M122 154 H164"/>
+  <!-- the stylus: point at the lower left, flat eraser at the upper right -->
+  <g transform="translate(178 190) rotate(-36)">
+    <path fill="#5A3410" opacity="0.35" transform="translate(2 4)" d="M-62 0 L-46 -7 H58 V7 H-46 Z"/>
+    <path fill="url(#tm-stylus)" stroke="#8A5418" stroke-width="1.5" d="M-62 0 L-46 -7 H44 V7 H-46 Z"/>
+    <path fill="url(#il-bronze)" stroke="#8A5418" stroke-width="1.5" d="M42 -7 H48 L62 -15 V15 L48 7 H42 Z"/>
+  </g>
 
     </g>
   </g>

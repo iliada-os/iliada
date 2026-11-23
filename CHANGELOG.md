@@ -16,6 +16,10 @@
 - **Fixed: COSMIC's apps kept their own icons** in the dock and the app
   library. Files, Settings, Text Editor, Terminal, Media Player, Photos,
   System Monitor, Document Reader and Screenshot now show Iliada's.
+- **Greek touches in the dock**: Terminal is a wax tablet with a stylus
+  and `>_` scratched in the wax, Workspaces is a row of temple columns
+  (the red one is the workspace you are on), and the app grid is a small
+  floor mosaic.
 - **Homer has a new icon**: a bronze bust with his red headband, in place
   of the old coin.
 

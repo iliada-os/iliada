@@ -83,22 +83,59 @@ TARGETS = [
 
 
 def apps_glyph(squircle):
-    tiles = []
-    for row in range(3):
-        for col in range(3):
-            d = squircle(78 + col * 50, 78 + row * 50, 18, n=5, seg=24)
-            fill = "url(#il-crest)" if col == 0 else "url(#il-bronze)"
-            tiles.append(f'<path fill="{fill}" d="{d}"/>')
-    return "\n  ".join(tiles)
+    """A floor mosaic: nine tesserae in Greek tile colours, cut a little
+    unevenly by hand."""
+    blue, red, ochre = ("#2F5D9E", "#5E8AC7"), ("#C4522E", "#E07A52"), ("#E3A94C", "#F6D38E")
+    colours = [blue, red, blue, red, ochre, red, blue, red, blue]
+    # corner offsets (x, y) per tessera: irregular, but the same every build
+    jitter = [
+        (-2, 1, 2, -1, 1, 2, -1, -2), (1, -2, -1, 1, 2, 1, -2, 2), (2, 2, -2, -1, -1, 1, 1, -2),
+        (-1, -2, 1, 2, -2, 1, 2, -1), (2, -1, -1, -2, 1, 2, -2, 1), (-2, 2, 2, 1, -1, -2, 1, -1),
+        (1, 1, -2, 2, 2, -1, -1, -2), (-1, 2, 1, -2, -2, -1, 2, 1), (2, -2, -1, 1, 1, 2, -2, -1),
+    ]
+    parts = []
+    for i, ((dark, light), j) in enumerate(zip(colours, jitter)):
+        cx, cy = 78 + (i % 3) * 50, 78 + (i // 3) * 50
+        h = 17
+        pts = [(cx - h + j[0] / 2, cy - h + j[1] / 2), (cx + h + j[2] / 2, cy - h + j[3] / 2),
+               (cx + h + j[4] / 2, cy + h + j[5] / 2), (cx - h + j[6] / 2, cy + h + j[7] / 2)]
+        d = "M" + " L".join(f"{x} {y}" for x, y in pts) + " Z"
+        top = f"M{pts[0][0] + 3} {pts[0][1] + 4} L{pts[1][0] - 3} {pts[1][1] + 4}"
+        parts.append(
+            f'<path fill="{dark}" stroke="{dark}" stroke-width="6" stroke-linejoin="round" d="{d}"/>'
+            f'<path fill="none" stroke="{light}" stroke-width="4" stroke-linecap="round" d="{top}"/>'
+        )
+    return "\n  ".join(parts)
 
 
 def workspaces_glyph(squircle):
-    ds = [squircle(cx, cy, 32, n=5, seg=24) for cx, cy in [(78, 90), (178, 90), (78, 166), (178, 166)]]
-    parts = [f'<path fill="url(#il-bronze)" d="{ds[0]}"/>']
-    # mid blue, not navy, so the empty workspaces read on light and dark
-    for d in ds[1:]:
-        parts.append(f'<path fill="#3B5C94" stroke="#DDA34E" stroke-width="4" d="{d}"/>')
-    parts.append('<rect x="62" y="78" width="32" height="8" rx="3" fill="#9E1F18"/>')
+    """A row of four Doric columns on a stepped base; the first, the
+    workspace you are on, is red."""
+    parts = [
+        "<defs>",
+        '  <linearGradient id="ws-col" x1="0" y1="0" x2="1" y2="0">',
+        '    <stop offset="0" stop-color="#A5671F"/><stop offset="0.35" stop-color="#F6D38E"/>',
+        '    <stop offset="0.7" stop-color="#DDA34E"/><stop offset="1" stop-color="#8A5418"/>',
+        "  </linearGradient>",
+        '  <linearGradient id="ws-active" x1="0" y1="0" x2="1" y2="0">',
+        '    <stop offset="0" stop-color="#9E1F18"/><stop offset="0.35" stop-color="#EE5442"/>',
+        '    <stop offset="0.7" stop-color="#CF3228"/><stop offset="1" stop-color="#7E1812"/>',
+        "  </linearGradient>",
+        "</defs>",
+    ]
+    for i in range(4):
+        x = 46 + i * 44
+        shaft = "url(#ws-active)" if i == 0 else "url(#ws-col)"
+        parts += [
+            f'<rect x="{x - 4}" y="50" width="40" height="12" rx="2" fill="#F6D38E" stroke="#8A5418" stroke-width="1.5"/>',
+            f'<path fill="#DDA34E" stroke="#8A5418" stroke-width="1.2" d="M{x} 62 H{x + 32} L{x + 27} 72 H{x + 5} Z"/>',
+            f'<rect x="{x + 3}" y="72" width="26" height="104" fill="{shaft}"/>',
+            f'<path stroke="#5A3410" stroke-width="1.8" opacity="0.45" d="M{x + 10} 74 V174 M{x + 16} 74 V174 M{x + 22} 74 V174"/>',
+        ]
+    parts += [
+        '<rect x="34" y="176" width="188" height="12" rx="2" fill="url(#il-bronze)" stroke="#8A5418" stroke-width="1.5"/>',
+        '<rect x="24" y="188" width="208" height="14" rx="2" fill="#A5671F" stroke="#8A5418" stroke-width="1.5"/>',
+    ]
     return "\n  ".join(parts)
 
 
@@ -119,7 +156,7 @@ OPTICAL = {
     "settings": 0.95, "updates": 0.95, "search": 0.95,
     "term": 0.92, "photos": 0.92, "monitor": 0.92, "files": 0.93,
     "agora": 0.95, "edit": 0.96, "installer": 0.97, "screenshot": 0.94,
-    "player": 0.88, "apps": 0.86, "workspaces": 0.88,
+    "player": 0.88, "apps": 0.86, "workspaces": 0.92,
 }
 TARGET = 204
 CENTER = (128, 124)  # a little high, the shadow sits underneath
