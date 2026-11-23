@@ -374,3 +374,29 @@ it, instead of a forum search and terminal commands.
 
 Later: an on-device model for the simplest requests, and tools for Settings
 pages (display, network) once those have an API.
+
+## 11. Continuous checks (GitHub Actions)
+
+The home build machine is often off. GitHub Actions on the public
+repository run the checks that used to live there (`.github/workflows`):
+
+* **Check** (`check.yml`), on every push and pull request: `cargo fmt`,
+  `clippy` (`-D warnings`) and the workspace tests, inside `nix develop`,
+  so the toolchain matches a developer shell. Cargo's crate cache is
+  reused between runs.
+* **Dev VM** (`vm.yml`), on pushes to `main` and from the Actions tab
+  (not every pull request): builds
+  `nixosConfigurations.dev-vm-x86_64.config.system.build.vm`, boots it in
+  QEMU with KVM, waits for the COSMIC desktop (`cosmic-comp`) and stores
+  screenshots as artifacts. The job fails if the desktop never comes up.
+  Over SSH (host port 2222, user `iliada` / password `iliada`; the login
+  shell is fish, so scripts are piped with `bash -s`) it also checks that
+  `iliada-broker`, `iliada-appd` and `iliada-system` are active.
+* **ISO** (`iso.yml`), from the Actions tab: builds the installer ISO and
+  prints its size. The image is not uploaded.
+
+Both binary caches are used as substituters, read-only:
+`cache.nixos.org` and `https://cache.iliada-os.com` (public key
+`cache.iliada-os.com-1:m3Nzs56JqFzorWcJP9N49LnaeHNyzdodpQE26xtwQXk=`,
+the same as in `nix/modules/workstation.nix`). CI never pushes to the
+cache and has no secrets.

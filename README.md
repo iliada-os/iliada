@@ -90,6 +90,7 @@ nix/
   modules/         the declarative system manifest (iliada.* NixOS options)
   hosts/           dev-vm, appliance (immutable image) and installer ISO
   installer/       iliada-install
+.github/workflows  Check (every change), Dev VM (`main`), ISO (Actions tab)
 templates/default/ the user configuration (nix flake init -t …)
 tests/installer/   end-to-end install test (QEMU/KVM)
   package.nix      Nix package for the Rust workspace
@@ -129,6 +130,11 @@ nix build .#iliada-tools
 nix run .#nixosConfigurations.dev-vm-x86_64.config.system.build.vm
 nix build .#nixosConfigurations.appliance-x86_64.config.system.build.image
 ```
+
+GitHub Actions run `cargo fmt`, `clippy` and the tests in `nix develop` on
+every change. Pushes to `main` also boot the x86-64 dev VM and keep a
+screenshot of the desktop. The installer ISO can be built from the Actions
+tab (size only; it is not uploaded). See [docs/architecture.md §11](docs/architecture.md#11-continuous-checks-github-actions).
 
 Optional AI library resolver (Anthropic API): `cargo run -p iliada-ingest
 --features ai -- run <src> --resolver ai` with `ANTHROPIC_API_KEY` set. The key
