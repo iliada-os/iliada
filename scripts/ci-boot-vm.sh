@@ -21,19 +21,17 @@ monitor="$work/qemu-monitor.sock"
 disk="$work/iliada-dev.qcow2"
 export NIX_DISK_IMAGE=$disk
 export TMPDIR=$work
-# Runner RAM is tight (~7 GiB). The NixOS default for this VM is 6 GiB / 4 cores;
-# last -m / -smp on the QEMU command line win.
-export QEMU_OPTS="-m 3584 -smp 2 -monitor unix:${monitor},server,nowait"
+# Do not pass -m: NixOS pins a matching memory-backend-memfd (virtiofs) from
+# virtualisation.memorySize (4 GiB on dev-vm-ci). A second -m makes QEMU
+# exit with "memory size does not match the size of the memory backend".
+export QEMU_OPTS="-monitor unix:${monitor},server,nowait"
 
-echo "starting $run_vm"
-# New session so we can stop QEMU and its helpers together.
-set +e
-setsid "$run_vm" >"$work/qemu.log" 2>&1 &
-vm_pid=$!
-set -e
+vm_alive() {
+  kill -0 "$vm_pid" 2>/dev/null
+}
 
 cleanup() {
-  if kill -0 "$vm_pid" 2>/dev/null; then
+  if [[ -n ${vm_pid-} ]] && kill -0 "$vm_pid" 2>/dev/null; then
     kill -TERM -"$vm_pid" 2>/dev/null || kill -TERM "$vm_pid" 2>/dev/null || true
     sleep 2
     kill -KILL -"$vm_pid" 2>/dev/null || kill -KILL "$vm_pid" 2>/dev/null || true
@@ -41,6 +39,21 @@ cleanup() {
   pkill -f qemu-system-x86_64 2>/dev/null || true
 }
 trap cleanup EXIT
+
+echo "starting $run_vm"
+# New session so we can stop QEMU and its helpers together.
+set +e
+setsid "$run_vm" >"$work/qemu.log" 2>&1 &
+vm_pid=$!
+set -e
+# Give the wrapper time to format the disk and exec QEMU before we treat a
+# missing process as a crash.
+sleep 5
+if ! vm_alive; then
+  echo "VM process exited while starting" >&2
+  tail -n 200 "$work/qemu.log" >&2 || true
+  exit 1
+fi
 
 ssh_base=(
   sshpass -p iliada
@@ -93,10 +106,6 @@ for cmd in (f"screendump {dest} png\n", f"screendump {dest}\n"):
     break
 s.close()
 PY
-}
-
-vm_alive() {
-  kill -0 "$vm_pid" 2>/dev/null
 }
 
 echo "waiting for SSH on 127.0.0.1:2222"

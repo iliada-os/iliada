@@ -1,6 +1,10 @@
-# Heavier check: build the x86-64 dev VM, boot it under QEMU/KVM, wait for the
-# COSMIC desktop, and store screenshots. Main and the Actions tab only — not
-# every pull request. Substituters are read-only. No secrets.
+# Heavier check: build the x86-64 CI VM, boot it under QEMU/KVM, wait for the
+# COSMIC desktop, and store screenshots. Main, the Actions tab, and PRs that
+# change the boot path — not every pull request.
+#
+# Substituters: cache.iliada-os.com + cache.nixos.org. On push to main in
+# iliada-os/iliada only, the built closure is signed and uploaded so later
+# runs do not recompile COSMIC. Pull requests and forks never upload.
 name: Dev VM
 
 on:
@@ -12,7 +16,9 @@ on:
     paths:
       - ".github/workflows/vm.yml"
       - "scripts/ci-boot-vm.sh"
+      - "scripts/ci-push-cache.sh"
       - "nix/hosts/dev-vm.nix"
+      - "nix/hosts/dev-vm-ci.nix"
   workflow_dispatch:
 
 permissions:
@@ -25,7 +31,7 @@ concurrency:
 jobs:
   boot:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - name: Free disk space
         run: |
@@ -40,6 +46,16 @@ jobs:
             /opt/hostedtoolcache
           sudo docker system prune -af || true
           df -h
+
+      - name: Add swap
+        run: |
+          sudo swapoff -a || true
+          sudo rm -f /swapfile
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
 
       - name: Enable KVM
         run: |
@@ -68,10 +84,22 @@ jobs:
         run: df -h
 
       - name: Build the dev VM
-        run: nix build -L .#nixosConfigurations.dev-vm-x86_64.config.system.build.vm --out-link result-vm
+        run: nix build -L .#nixosConfigurations.dev-vm-ci-x86_64.config.system.build.vm --out-link result-vm
 
       - name: Disk space after the build
         run: df -h
+
+      - name: Upload the built closure to cache.iliada-os.com
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          github.repository == 'iliada-os/iliada'
+        env:
+          ILIADA_CACHE_KEY: ${{ secrets.ILIADA_CACHE_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: bash scripts/ci-push-cache.sh "$(readlink -f result-vm)"
 
       - name: Install sshpass
         run: sudo apt-get update -qq && sudo apt-get install -y sshpass
