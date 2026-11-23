@@ -83,6 +83,32 @@ guest() {
   "${ssh_base[@]}" 'bash -s' "$@"
 }
 
+# Press keys in the VM through QMP: each argument is one press, keys held
+# together joined by "+" (qcodes: meta_l, ret, esc, a, b, ...).
+keys() {
+  python3 - "$qmp" "$@" <<'PY' || true
+import json, socket, sys, time
+
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.connect(sys.argv[1])
+f = s.makefile("rwb")
+f.readline()
+f.write(b'{"execute":"qmp_capabilities"}\n'); f.flush()
+while b'"return"' not in f.readline():
+    pass
+for press in sys.argv[2:]:
+    combo = [{"type": "qcode", "data": k} for k in press.split("+")]
+    f.write((json.dumps({"execute": "send-key", "arguments": {"keys": combo, "hold-time": 60}}) + "\n").encode())
+    f.flush()
+    while True:
+        line = f.readline()
+        if not line or b'"return"' in line or b'"error"' in line:
+            break
+    time.sleep(0.15)
+s.close()
+PY
+}
+
 # QEMU QMP screendump, then localhost VNC. VNC still uses password
 # iliada (same as the mutable VM); QMP is the one that must work.
 screendump() {
@@ -402,6 +428,39 @@ if [[ $guest_status -ne 0 ]]; then
 fi
 if grep -q 'CORE_FAIL=1' "$work/guest-status.txt"; then
   echo "a core Iliada service is not active" >&2
+  exit 1
+fi
+
+echo "checking the search (iliada-searchd, the Super key overlay)"
+set +e
+guest <<'EOF' | tee "$work/search.txt"
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+fail=0
+for i in $(seq 1 30); do
+  iliada-search stats >/dev/null 2>&1 && break
+  sleep 2
+done
+systemctl --user status iliada-searchd --no-pager -l | head -n 20 || true
+iliada-search stats || fail=1
+echo '=== query: files ==='
+iliada-search query files | tee /tmp/q.txt || fail=1
+grep -q '^Application *Files' /tmp/q.txt || { echo "Files app not found by the search"; fail=1; }
+echo '=== query: 2+3*4 ==='
+iliada-search query '2+3*4' | grep -q '= 14' || { echo "no answer for 2+3*4"; fail=1; }
+pgrep -a -f iliada-search-overlay || echo "overlay not running yet (started on first Super)"
+echo "SEARCH_FAIL=$fail"
+EOF
+set -e
+# Super shows the search; type "term"; Esc closes.
+keys meta_l
+sleep 2
+screendump "$work/04-search.png"
+keys t e r m
+sleep 1
+screendump "$work/05-search-term.png"
+keys esc
+if grep -q 'SEARCH_FAIL=1' "$work/search.txt"; then
+  echo "the search service does not answer" >&2
   exit 1
 fi
 

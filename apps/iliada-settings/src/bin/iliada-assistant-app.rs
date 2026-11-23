@@ -9,6 +9,7 @@
 //! * **The quick panel** (`--panel`, Alt+Space anywhere): a large "Ask
 //!   Iliada…" field and the answer below it; Esc closes. Its conversations
 //!   are saved too, and "Open in Homer" continues one in the app.
+//!   `--ask <question>` asks at once (the search's "Ask Homer" row, Super+O).
 //!
 //! In Ask mode each action appears as a card with Allow / Don't Allow; in
 //! Auto mode actions run and are listed as they happen. One window of each
@@ -44,6 +45,8 @@ const SUGGESTIONS: [&str; 6] = [
 struct Flags {
     panel: bool,
     open: Option<String>,
+    /// Ask this at once (from the search).
+    ask: Option<String>,
 }
 
 fn parse_flags() -> Flags {
@@ -53,11 +56,16 @@ fn parse_flags() -> Flags {
         match a.as_str() {
             "--panel" => f.panel = true,
             "--open" => f.open = args.next(),
+            "--ask" => f.ask = args.next().map(|q| q.replace(['\n', '\r'], " ")),
             _ => {}
         }
     }
     f
 }
+
+/// A request line that asks a question (the rest of the line) rather than
+/// opening a conversation.
+const ASK: &str = "ask\t";
 
 /// The running window listens here; a later start asks it to come forward
 /// (and to open a conversation).
@@ -83,7 +91,14 @@ fn claim_instance(flags: &Flags) -> bool {
             }
             Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
                 if let Ok(mut s) = std::os::unix::net::UnixStream::connect(&path) {
-                    let _ = writeln!(s, "{}", flags.open.as_deref().unwrap_or(""));
+                    match &flags.ask {
+                        Some(q) => {
+                            let _ = writeln!(s, "{ASK}{q}");
+                        }
+                        None => {
+                            let _ = writeln!(s, "{}", flags.open.as_deref().unwrap_or(""));
+                        }
+                    }
                     return false;
                 }
                 // Left over from one that was stopped: take it over.
@@ -151,6 +166,8 @@ enum Message {
     Close,
     /// Started again: come forward (and open this conversation).
     Show(Option<String>),
+    /// Started again with a question: come forward and ask it.
+    AskNow(String),
 }
 
 struct App {
@@ -177,6 +194,8 @@ struct App {
     notice: Option<String>,
     scroll: widget::Id,
     field: widget::Id,
+    /// Asked from the search before the assistant was ready.
+    pending: Option<String>,
 }
 
 /// Bridges the assistant's callbacks to the window.
@@ -215,15 +234,18 @@ fn show_requests() -> impl futures_util::Stream<Item = Message> {
                 _ => std::future::pending().await,
             },
         };
-        let mut open = None;
+        let mut message = Message::Show(None);
         if let Ok((stream, _)) = listener.accept().await {
             let mut line = String::new();
             let mut reader = tokio::io::BufReader::new(stream);
             let read = reader.read_line(&mut line);
             let _ = tokio::time::timeout(std::time::Duration::from_secs(1), read).await;
-            open = Some(line.trim().to_owned()).filter(|l| !l.is_empty());
+            message = match line.strip_prefix(ASK) {
+                Some(q) => Message::AskNow(q.trim().to_owned()),
+                None => Message::Show(Some(line.trim().to_owned()).filter(|l| !l.is_empty())),
+            };
         }
-        Some((Message::Show(open), Some(listener)))
+        Some((message, Some(listener)))
     })
 }
 
@@ -667,6 +689,7 @@ impl cosmic::Application for App {
             notice: None,
             scroll: widget::Id::unique(),
             field: widget::Id::unique(),
+            pending: flags.ask.clone().filter(|q| !q.trim().is_empty()),
         };
         if app.panel {
             // A panel, not a document window: no title bar, and its own
@@ -736,6 +759,9 @@ impl cosmic::Application for App {
                     self.conversation.model = self.model();
                 }
                 self.connect();
+                if let Some(q) = self.pending.take() {
+                    return self.update(Message::AskNow(q));
+                }
                 return self.to_end();
             }
             Message::Input(t) => self.input = t,
@@ -906,6 +932,23 @@ impl cosmic::Application for App {
                     }
                     std::process::exit(0);
                 }
+            }
+            Message::AskNow(q) => {
+                let mut tasks = Vec::new();
+                if let Some(id) = self.core.main_window_id() {
+                    tasks.push(cosmic::iced::window::gain_focus(id));
+                }
+                if self.assistant.is_some() && !self.busy {
+                    tasks.push(self.ask(q));
+                } else if self.settings.is_none() {
+                    // Not ready yet: asked once it is.
+                    self.pending = Some(q);
+                } else {
+                    // Busy, or Homer is off: the question waits in the field.
+                    self.input = q;
+                    tasks.push(widget::text_input::focus(self.field.clone()));
+                }
+                return Task::batch(tasks);
             }
             Message::Show(open) => {
                 let mut tasks = Vec::new();

@@ -52,6 +52,20 @@ fn wayland_socket() -> Option<PathBuf> {
     path.exists().then_some(path)
 }
 
+/// A display socket for this app that marks it as sandboxed. Without one
+/// (a compositor without security contexts) the app gets the desktop's
+/// socket, as before, and a warning says so.
+fn secure_display(host: &Path, app: &str) -> Option<iliada_sandbox::wayland::SecureDisplay> {
+    let dir = PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR")?).join("iliada/wayland");
+    match iliada_sandbox::wayland::secure_display(host, &dir, app) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            eprintln!("iliada-run: {app} gets the desktop's own display: {e:#}");
+            None
+        }
+    }
+}
+
 /// The user asked for this app to run in its own micro-VM (Settings →
 /// Privacy → Extra isolation): `~/.config/iliada/extra-isolation` lists app ids.
 fn extra_isolation(app: &str) -> bool {
@@ -233,7 +247,13 @@ async fn main() -> Result<()> {
         let _ = std::fs::create_dir_all(data.join(d));
     }
     let mut spec = SandboxSpec::from_bundle(&bundle, &host, network, data)?;
-    spec.display = wayland_socket();
+    // The app's own display socket, so COSMIC knows it is sandboxed (no
+    // clipboard watching, screen capture or drawing over other windows).
+    let secure = wayland_socket().and_then(|d| secure_display(&d, bundle.info.id.as_str()));
+    spec.display = match &secure {
+        Some(s) => Some(s.path().to_owned()),
+        None => wayland_socket(),
+    };
     spec.files = opened_files(&args);
     // file:// URLs become plain paths (the file is at the same path inside).
     let args: Vec<String> =
@@ -245,5 +265,7 @@ async fn main() -> Result<()> {
     let backend = backend_for(tier, &host);
     let mut handle = backend.launch(&spec).await?;
     let code = handle.wait().await?.unwrap_or(1);
+    // Closes the app's display socket (exit skips destructors).
+    drop(secure);
     std::process::exit(code);
 }

@@ -34,6 +34,17 @@ EXTRA = {
       <stop offset="0" stop-color="#F6D38E"/>
       <stop offset="1" stop-color="#A5671F"/>
     </linearGradient>""",
+    "search": """
+    <radialGradient id="sp-glass" cx="96" cy="92" r="72" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3A6BB0"/>
+      <stop offset="0.55" stop-color="#22396A"/>
+      <stop offset="1" stop-color="#14254A"/>
+    </radialGradient>
+    <linearGradient id="sp-handle" x1="150" y1="210" x2="210" y2="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8A5418"/>
+      <stop offset="0.5" stop-color="#DDA34E"/>
+      <stop offset="1" stop-color="#F6D38E"/>
+    </linearGradient>""",
     "installer": """
     <linearGradient id="sail" x1="0" y1="64" x2="0" y2="140" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFF8EA"/><stop offset="1" stop-color="#E9DCC2"/>
@@ -54,7 +65,7 @@ GLYPHS = {
     "photos": ("Photos", None),
     "reader": ("Document Reader", None),
     "screenshot": ("Screenshot", None),
-    "search": ("Search", None),
+    "search": ("Search", "search"),
     "monitor": ("System Monitor", None),
     "updates": ("Updates", None),
 }
