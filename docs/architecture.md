@@ -392,7 +392,7 @@ repository run the checks that used to live there (`.github/workflows`):
   hosted runner), boots it in QEMU with KVM, waits for the COSMIC desktop
   (`cosmic-comp` on the process command line: the compositor is a wrapped
   binary, and Iliada's `pgrep` is uutils) and stores screenshots as
-  artifacts (QEMU QMP, then loopback VNC). The job fails if the desktop
+  artifacts (QEMU QMP; loopback VNC is a fallback). The job fails if the desktop
   never comes up. Over SSH (host port 2222, user `iliada` / password
   `iliada`; one multiplexed connection, because a new session every few
   seconds drowns the journal; the login shell is fish, so scripts are

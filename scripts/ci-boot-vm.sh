@@ -25,7 +25,9 @@ export TMPDIR=$work
 # Do not pass -m: the wrapper already sets -m from virtualisation.memorySize,
 # and virtiofs pins a matching memory-backend-memfd. A second -m makes QEMU
 # exit with "memory size does not match the size of the memory backend".
-export QEMU_OPTS="-qmp unix:${qmp},server,nowait"
+# Extra QEMU flags only. Do not replace qemu.options in the VM config:
+# that list carries -kernel, virtiofs and the virtiofs memfd.
+export QEMU_OPTS="-qmp unix:${qmp},server,nowait -serial file:${work}/serial.log"
 
 vm_alive() {
   kill -0 "$vm_pid" 2>/dev/null
@@ -81,7 +83,8 @@ guest() {
   "${ssh_base[@]}" 'bash -s' "$@"
 }
 
-# QEMU QMP screendump, then localhost VNC (CI VM has no VNC password).
+# QEMU QMP screendump, then localhost VNC. VNC still uses password
+# iliada (same as the mutable VM); QMP is the one that must work.
 screendump() {
   local dest=$1
   python3 - "$qmp" "$dest" <<'PY' || true
@@ -290,6 +293,10 @@ until guest <<<'echo ssh-ok' | grep -q ssh-ok; do
     echo "SSH never came up" >&2
     screendump "$work/never-ssh.png" || true
     tail -n 200 "$work/qemu.log" >&2 || true
+    if [[ -f $work/serial.log ]]; then
+      echo "=== serial ===" >&2
+      tail -n 200 "$work/serial.log" >&2 || true
+    fi
     exit 1
   fi
   if ! vm_alive; then
