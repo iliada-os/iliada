@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Dark mode is the default** for a new person and the live installer
+  session: the desktop, GTK apps and the login screen start dark, in
+  the bronze-on-navy look. A choice already saved in Appearance is
+  left as it is.
 - **Checks run on GitHub** when the code changes, so they don't depend on
   the home build machine being on: formatting, warnings and tests every
   time, and a picture of the development VM's desktop on the main branch.

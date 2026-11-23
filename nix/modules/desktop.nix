@@ -133,6 +133,7 @@ in
       } ''
         # The Iliad look: bronze on navy (dark), deep bronze on parchment
         # (light), computed by COSMIC's own theme code (iliada-theme).
+        # Dark mode is the default (Mode/v1/is_dark).
         ${desktopApps}/bin/iliada-theme $out/share
         bg=$out/share/cosmic/com.system76.CosmicBackground/v1
         mkdir -p $bg
@@ -227,11 +228,33 @@ in
         done
       ''))
     ];
+    # Dark mode by default for GTK apps that do not follow COSMIC yet.
+    # These files apply only when the person has no settings of their own.
+    # Someone who picks Light in Appearance: COSMIC sets
+    # org.gnome.desktop.interface color-scheme to prefer-light, which GTK 4,
+    # libadwaita and the portal follow.
+    environment.etc."xdg/gtk-3.0/settings.ini".text = ''
+      [Settings]
+      gtk-application-prefer-dark-theme=true
+    '';
+    environment.etc."xdg/gtk-4.0/settings.ini".text = ''
+      [Settings]
+      gtk-application-prefer-dark-theme=true
+    '';
+    programs.dconf.enable = true;
+    programs.dconf.profiles.user.databases = [
+      {
+        settings."org/gnome/desktop/interface" = {
+          color-scheme = "prefer-dark";
+        };
+      }
+    ];
     # COSMIC's apps read the built-in fallback theme before the system
     # defaults above, so each person gets Iliada's look (colours and frosted
     # glass) in their own settings at login. A theme the person changed in
     # Appearance is theirs and stays; one still as Iliada left it follows
-    # Iliada's (a newer Iliada can refresh its look).
+    # Iliada's (a newer Iliada can refresh its look). Dark mode is copied
+    # only when they have no Mode setting yet, so a saved choice stays.
     systemd.user.services.iliada-look = {
       description = "Iliada's look: the Iliad theme and frosted glass";
       wantedBy = [ "default.target" ];
@@ -257,6 +280,17 @@ in
             fi
           done
         done
+        # Dark mode for a new person. Leave a choice they already made.
+        mode=$base/com.system76.CosmicTheme.Mode/v1
+        sys_mode=$sys/com.system76.CosmicTheme.Mode/v1
+        if [ ! -e "$mode/is_dark" ] && [ -f "$sys_mode/is_dark" ]; then
+          mkdir -p "$mode"
+          cp -L "$sys_mode/is_dark" "$mode"/
+          if [ -f "$sys_mode/auto_switch" ] && [ ! -e "$mode/auto_switch" ]; then
+            cp -L "$sys_mode/auto_switch" "$mode"/
+          fi
+          chmod -R u+w "$mode"
+        fi
         # Dock ids that changed with an Iliada update. Same replacements as
         # migrate_dock (iliada-cli): Settings since 0.2.6, agora after that.
         fav=$base/com.system76.CosmicAppList/v1/favorites

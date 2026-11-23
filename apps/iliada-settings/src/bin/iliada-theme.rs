@@ -4,16 +4,18 @@
 //! Appearance does, so buttons, panels and text stay consistent.
 //!
 //!   iliada-theme <dir>   writes <dir>/cosmic/com.system76.CosmicTheme.*/v2/…
+//!                        and Mode/v1 (is_dark true, auto_switch false)
 //!
 //! Used when building Iliada (the system defaults); each person gets them at
-//! login unless they chose their own in Appearance.
+//! login unless they chose their own in Appearance. Dark mode is the default.
 
 use std::path::PathBuf;
 
 use cosmic::cosmic_config::{Config, CosmicConfigEntry};
 use cosmic::cosmic_theme::palette::{Srgb, Srgba};
 use cosmic::cosmic_theme::{
-    DARK_THEME_BUILDER_ID, DARK_THEME_ID, LIGHT_THEME_BUILDER_ID, LIGHT_THEME_ID, Theme, ThemeBuilder,
+    DARK_THEME_BUILDER_ID, DARK_THEME_ID, LIGHT_THEME_BUILDER_ID, LIGHT_THEME_ID, THEME_MODE_ID, Theme, ThemeBuilder,
+    ThemeMode,
 };
 
 fn rgb(hex: u32) -> Srgb {
@@ -40,15 +42,25 @@ fn light() -> ThemeBuilder {
     b
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let dir = PathBuf::from(std::env::args().nth(1).ok_or("usage: iliada-theme <dir>")?);
+/// Dark mode, and it does not follow sunrise and sunset.
+fn default_mode() -> ThemeMode {
+    ThemeMode { is_dark: true, auto_switch: false }
+}
+
+fn write_themes(dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     for (builder, builder_id, theme_id) in
         [(dark(), DARK_THEME_BUILDER_ID, DARK_THEME_ID), (light(), LIGHT_THEME_BUILDER_ID, LIGHT_THEME_ID)]
     {
         builder.write_entry(&Config::with_custom_path(builder_id, ThemeBuilder::VERSION, dir.clone())?)?;
         builder.build().write_entry(&Config::with_custom_path(theme_id, Theme::VERSION, dir.clone())?)?;
     }
+    default_mode().write_entry(&Config::with_custom_path(THEME_MODE_ID, ThemeMode::VERSION, dir)?)?;
     Ok(())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = PathBuf::from(std::env::args().nth(1).ok_or("usage: iliada-theme <dir>")?);
+    write_themes(dir)
 }
 
 #[cfg(test)]
@@ -62,27 +74,23 @@ mod tests {
         assert!(a.red > a.green && a.green > a.blue, "bronze: red > green > blue, got {a:?}");
         let bg = t.bg_color();
         assert!(bg.blue > bg.red, "a navy background, got {bg:?}");
+        assert!(t.is_dark);
         assert!(!light().build().is_dark);
+        assert!(default_mode().is_dark && !default_mode().auto_switch);
     }
 
     #[test]
     fn writes_both_themes_in_cosmic_layout() {
         let dir = std::env::temp_dir().join(format!("iliada-theme-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        for (builder, builder_id, theme_id) in
-            [(dark(), DARK_THEME_BUILDER_ID, DARK_THEME_ID), (light(), LIGHT_THEME_BUILDER_ID, LIGHT_THEME_ID)]
-        {
-            builder
-                .write_entry(&Config::with_custom_path(builder_id, ThemeBuilder::VERSION, dir.clone()).unwrap())
-                .unwrap();
-            builder
-                .build()
-                .write_entry(&Config::with_custom_path(theme_id, Theme::VERSION, dir.clone()).unwrap())
-                .unwrap();
-        }
+        write_themes(dir.clone()).unwrap();
         let accent = std::fs::read_to_string(dir.join("cosmic/com.system76.CosmicTheme.Dark/v2/accent")).unwrap();
         assert!(accent.contains("#DDA34E"), "{accent}");
         assert!(dir.join("cosmic/com.system76.CosmicTheme.Light.Builder/v2/bg_color").exists());
+        let is_dark = std::fs::read_to_string(dir.join("cosmic/com.system76.CosmicTheme.Mode/v1/is_dark")).unwrap();
+        assert_eq!(is_dark.trim(), "true", "{is_dark}");
+        let auto = std::fs::read_to_string(dir.join("cosmic/com.system76.CosmicTheme.Mode/v1/auto_switch")).unwrap();
+        assert_eq!(auto.trim(), "false", "{auto}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
