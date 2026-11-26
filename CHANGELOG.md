@@ -20,7 +20,16 @@
   gets a display connection marked as sandboxed, so COSMIC refuses it the
   clipboard-manager, screen-capture, virtual-keyboard and draw-over-
   everything features that only the desktop itself should have.
-
+- **Homer mode in the Terminal**: press Ctrl+O at the prompt (or type
+  `homer`) and Homer works in that folder: his commands start there, and
+  he answers right in the terminal. Text typed before Ctrl+O is asked
+  first. Ctrl+O again goes back to the shell. Programs like nano and vim
+  keep their own Ctrl+O.
+- **Homer remembers, in sections**: the Homer app lists Chats, Terminal
+  conversations by folder, and Tasks. Quick one-shot requests like
+  "Switch to dark mode" are tasks: folded away and removed after a day.
+  Search your conversations, delete one, or clear them all. Settings →
+  Homer → History turns keeping conversations off.
 - **Dark mode is the default** for a new person and the live installer
   session: the desktop, GTK apps and the login screen start dark, in
   the bronze-on-navy look. A choice already saved in Appearance is

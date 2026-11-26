@@ -1214,6 +1214,7 @@ dependencies = [
  "iliada-assistant",
  "iliada-store",
  "iliada-system",
+ "rustix",
  "serde_json",
  "tokio",
  "tracing-subscriber",

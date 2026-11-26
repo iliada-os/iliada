@@ -151,6 +151,22 @@ From the terminal: `iliada ask "turn on ssh"`, or set the key with
 `iliada assistant key` (it reads the key from the keyboard, or from a file:
 `iliada assistant key < key.txt`).
 
+**Homer mode in the Terminal**: press **Ctrl+O** at the prompt (or type
+`homer`) and Homer works in the folder you are in: "why does the build
+fail?", "make a .gitignore for this project". Commands he runs start in
+that folder (they need **Full access**, and in Ask mode he asks first).
+Type something and press Ctrl+O to ask Homer about it. **Ctrl+O** again
+(or Ctrl+D) goes back to the shell; `/new` starts over. Inside programs
+such as nano or vim, Ctrl+O is theirs as before.
+
+**History**: Homer keeps conversations on this computer, and the Homer
+app lists them in sections: **Chats**, **Terminal** (by folder) and
+**Tasks**. A task is a quick request that Homer did in one go, such as
+"Switch to dark mode": tasks are folded away and removed after a day.
+Search the list from the field above it, delete one with the bin icon or
+all of them with Clear history. To keep nothing, turn off Settings →
+Homer → History → **Keep conversations**.
+
 ## Who can change what
 
 Anyone can install and remove their own apps. Software, services, updates

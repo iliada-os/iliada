@@ -427,6 +427,11 @@ async fn system(request: Request) -> Result<Value> {
 
 /// Run one tool; the result is text for the model.
 pub async fn run(store: &Store, name: &str, input: &Value) -> Result<String> {
+    run_in(store, name, input, None).await
+}
+
+/// [`run`], with commands started in `cwd` (Homer mode in the Terminal).
+pub async fn run_in(store: &Store, name: &str, input: &Value, cwd: Option<&std::path::Path>) -> Result<String> {
     let out: Value = match name {
         "get_status" => {
             let mut v = serde_json::to_value(client::status().await?)?;
@@ -670,7 +675,7 @@ pub async fn run(store: &Store, name: &str, input: &Value) -> Result<String> {
             let command = s(input, "command");
             anyhow::ensure!(!command.trim().is_empty(), "no command given");
             let secs = input["timeout_seconds"].as_u64().unwrap_or(120).clamp(1, 600);
-            return run_command(command, std::time::Duration::from_secs(secs)).await;
+            return run_command_in(command, std::time::Duration::from_secs(secs), cwd).await;
         }
         other => bail!("there is no tool called {other}"),
     };
@@ -696,8 +701,21 @@ const MAX_OUTPUT: usize = 10_000;
 /// A command run with bash as the user, in their home folder; its exit
 /// status and (cut) output, stdout and stderr together.
 pub async fn run_command(command: &str, timeout: std::time::Duration) -> Result<String> {
+    run_command_in(command, timeout, None).await
+}
+
+/// [`run_command`] in `cwd` (when it is a folder; else the home folder).
+pub async fn run_command_in(
+    command: &str,
+    timeout: std::time::Duration,
+    cwd: Option<&std::path::Path>,
+) -> Result<String> {
     use tokio::io::AsyncReadExt;
-    let home = std::env::var_os("HOME").map(PathBuf::from).filter(|h| h.is_dir()).unwrap_or_else(|| "/".into());
+    let home = cwd
+        .filter(|d| d.is_dir())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(PathBuf::from).filter(|h| h.is_dir()))
+        .unwrap_or_else(|| "/".into());
     let mut child = tokio::process::Command::new("bash")
         .args(["-c", &format!("exec 2>&1\n{command}")])
         .current_dir(home)
@@ -803,6 +821,19 @@ mod tests {
         )
         .unwrap();
         assert!(r["output"].as_str().unwrap().ends_with("(output cut)"));
+    }
+
+    #[tokio::test]
+    async fn terminal_commands_run_in_its_folder() {
+        let d = tempfile::tempdir().unwrap();
+        let secs = std::time::Duration::from_secs(10);
+        let r: Value = serde_json::from_str(&run_command_in("pwd", secs, Some(d.path())).await.unwrap()).unwrap();
+        let here = std::fs::canonicalize(d.path()).unwrap();
+        assert_eq!(r["output"].as_str().unwrap().trim(), here.to_str().unwrap());
+        // A folder that is gone: the home folder, as before.
+        let gone = d.path().join("gone");
+        let r: Value = serde_json::from_str(&run_command_in("pwd", secs, Some(&gone)).await.unwrap()).unwrap();
+        assert_ne!(r["output"].as_str().unwrap().trim(), gone.to_str().unwrap());
     }
 
     #[test]
