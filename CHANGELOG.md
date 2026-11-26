@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Search, like Spotlight**: press Super and type. Apps, files and
+  folders in your home, Settings pages, quick actions (dark mode, lock,
+  Wi-Fi, restart…) and agora apps you have not installed yet, ranked by
+  what you open most. It answers sums, unit conversions and dates as you
+  type ("15% of 80", "5 km in miles", "days until christmas"). `>` runs a
+  command in Terminal, `?` searches the web, `~/` browses folders. Tab on
+  a file shows Open With, Reveal in Files and Copy Path. When nothing good
+  is found, or you ask a question or for a reminder, the search offers to
+  ask Homer; **Super+O** asks Homer straight away. Results come from an
+  index kept in memory: a few milliseconds per key, even with a million
+  files. **Super+V** is kept for clipboard history, coming next. Tiling's
+  "toggle orientation" moved to Super+Shift+O.
+- **A new Search icon** in the dock, a short bronze magnifier in the
+  Spotlight style.
+- **Apps can no longer watch the clipboard or the screen.** Each app now
+  gets a display connection marked as sandboxed, so COSMIC refuses it the
+  clipboard-manager, screen-capture, virtual-keyboard and draw-over-
+  everything features that only the desktop itself should have.
+
 - **Dark mode is the default** for a new person and the live installer
   session: the desktop, GTK apps and the login screen start dark, in
   the bronze-on-navy look. A choice already saved in Appearance is

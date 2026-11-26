@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Search
+Comment=Iliada's search, waiting for the Super key
+Exec=iliada-search-overlay
+NoDisplay=true
+X-GNOME-Autostart-Phase=Applications

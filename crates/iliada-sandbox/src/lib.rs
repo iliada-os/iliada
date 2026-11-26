@@ -19,6 +19,7 @@
 pub mod cloud_hypervisor;
 pub mod host;
 pub mod namespace;
+pub mod wayland;
 
 use std::path::PathBuf;
 

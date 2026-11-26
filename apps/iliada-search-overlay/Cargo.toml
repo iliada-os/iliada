@@ -1,0 +1,16 @@
+[package]
+name = "iliada-search-overlay"
+description = "Iliada's search overlay: Spotlight for Iliada (COSMIC layer-shell surface)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "iliada-search-overlay"
+path = "src/main.rs"
+
+[dependencies]
+iliada-search = { path = "../../crates/iliada-search" }
+iliada-system.workspace = true
+tokio.workspace = true
+libcosmic.workspace = true

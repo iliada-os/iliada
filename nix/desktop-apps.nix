@@ -1,5 +1,5 @@
-# Iliada's desktop apps: agora, Settings, the Setup Assistant and the
-# installer. One
+# Iliada's desktop apps: agora, Settings, the Setup Assistant, the
+# installer and the search overlay. One
 # cargo workspace (apps/), built separately from the core tools because it
 # depends on libcosmic (git dependencies, GPU rendering stack).
 { lib, rustPlatform, libcosmicAppHook, pkg-config, zstd, librsvg }:

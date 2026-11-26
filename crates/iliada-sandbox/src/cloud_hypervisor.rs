@@ -422,18 +422,20 @@ impl IsolationBackend for CloudHypervisorBackend {
         }
         // The app's window: the guest's waypipe dials host port 7001, which
         // cloud-hypervisor delivers to this Unix socket.
-        helpers.push(spawn(
-            &self.host.waypipe,
-            vec![
-                "--no-gpu".into(),
-                "--compress".into(),
-                "none".into(),
-                "-s".into(),
-                plan.display_socket().display().to_string(),
-                "client".into(),
-            ],
-            "waypipe",
-        )?);
+        // It connects to the display the app was given: the host's own, or
+        // one that marks the app's windows as sandboxed (wayland.rs).
+        let mut waypipe = Command::new(&self.host.waypipe);
+        waypipe
+            .args(["--no-gpu", "--compress", "none", "-s"])
+            .arg(plan.display_socket())
+            .arg("client")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .kill_on_drop(true);
+        if let Some(d) = &spec.display {
+            waypipe.env("WAYLAND_DISPLAY", d);
+        }
+        helpers.push(waypipe.spawn().context("starting waypipe")?);
         if let (Some(sock), Some(passt)) = (&plan.net, &self.host.passt) {
             helpers.push(spawn(passt, passt_args(sock), "passt (the app's network)")?);
         }

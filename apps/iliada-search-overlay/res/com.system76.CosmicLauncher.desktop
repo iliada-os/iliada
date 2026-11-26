@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Search
+Comment=Find apps, files, settings and answers, or ask Homer
+Exec=iliada-search
+Icon=com.system76.CosmicLauncher
+NoDisplay=true
+Categories=COSMIC;

@@ -1,0 +1,42 @@
+[package]
+name = "iliada-search"
+description = "Iliada's search: an in-memory index of apps, files, Settings and agora, and the search service (iliada-searchd)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "iliada-searchd"
+path = "src/bin/iliada-searchd.rs"
+
+# What the Super key runs: shows the search, or asks Homer (Super+O).
+[[bin]]
+name = "iliada-search"
+path = "src/bin/iliada-search.rs"
+
+[dependencies]
+iliada-store.workspace = true
+iliada-catalog.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+# Fuzzy matching for apps, Settings and actions (Helix's matcher).
+nucleo-matcher = "0.3"
+# Substring search over every file name at once.
+memchr = "2"
+# Walking the home folder in parallel.
+ignore = "0.4"
+# Following changes to the home folder (inotify).
+notify = { version = "8", default-features = false }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

@@ -119,6 +119,26 @@ in
     environment.etc."xdg/autostart/org.iliada.Setup.desktop" = lib.mkIf cfg.setupAssistant {
       source = ../../apps/iliada-settings/res/org.iliada.Setup-autostart.desktop;
     };
+    # The search overlay waits, hidden, from login, so Super only has to
+    # show it (iliada-search starts it if it is not running).
+    environment.etc."xdg/autostart/org.iliada.SearchOverlay.desktop".source =
+      ../../apps/iliada-search-overlay/res/org.iliada.SearchOverlay-autostart.desktop;
+    # The search service: the home folder's index, in memory, kept current.
+    systemd.user.services.iliada-searchd = {
+      description = "Iliada search: the index of apps, files and settings";
+      wantedBy = [ "default.target" ];
+      # Desktop entries are found as in the session (systemd's user
+      # manager has no XDG_DATA_DIRS of its own).
+      environment.XDG_DATA_DIRS = "%h/.local/share:%h/.nix-profile/share:/etc/profiles/per-user/%u/share:/run/current-system/sw/share:/var/lib/iliada-desktop";
+      path = [ pkgs.xdg-utils ];
+      serviceConfig = {
+        ExecStart = "${config.iliada.package}/bin/iliada-searchd";
+        Restart = "on-failure";
+        RestartSec = 2;
+        # Indexing never competes with what you do for the disk.
+        IOSchedulingClass = "idle";
+      };
+    };
     environment.systemPackages = [
       # Notifications from scripts and the Setup Assistant's background installs.
       pkgs.libnotify
@@ -204,15 +224,26 @@ in
             "com.system76.CosmicTerm",
         ]
         EOF
-        # Alt+Space opens the assistant's quick panel from anywhere (Super+Space stays the
-        # keyboard-layout switch).
+        # Iliada's search (Spotlight for Iliada) in place of COSMIC's
+        # launcher: Super shows it, Super+O asks Homer, Super+V is the
+        # clipboard. Tiling's "toggle orientation" moves from Super+O to
+        # Super+Shift+O. Alt+Space still opens Homer's quick panel
+        # (Super+Space stays the keyboard-layout switch). The dock's Search
+        # button runs the launcher's desktop entry, replaced below.
         keys=$out/share/cosmic/com.system76.CosmicSettings.Shortcuts/v1
         mkdir -p $keys
         cat > $keys/custom <<'EOF'
         {
+            (modifiers: [Super]): Spawn("iliada-search"),
+            (modifiers: [Super], key: "slash"): Spawn("iliada-search"),
+            (modifiers: [Super], key: "o"): Spawn("iliada-search homer"),
+            (modifiers: [Super, Shift], key: "o"): ToggleOrientation,
+            (modifiers: [Super], key: "v"): Spawn("iliada-search clipboard"),
             (modifiers: [Alt], key: "space"): Spawn("iliada-ask"),
         }
         EOF
+        install -m644 ${../../apps/iliada-search-overlay/res/com.system76.CosmicLauncher.desktop} \
+          $apps/com.system76.CosmicLauncher.desktop
         # Frosted glass: windows, the panel and dock, their menus and the
         # launcher are see-through with the desktop blurred behind them
         # (COSMIC Settings → Appearance turns it off). Set for the theme and
