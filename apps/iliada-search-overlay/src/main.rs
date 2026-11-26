@@ -10,6 +10,7 @@
 //! * Super: search apps, files and folders, Settings, agora, answers.
 //! * Super+O: ask Homer.
 //! * Super+V: clipboard history (the last 200 copies).
+//! * Space: Quick Look preview of the selected result.
 //!
 //! Keys: ↑/↓ choose, Enter opens, Tab (or →) shows what else a file
 //! offers (Open With, Reveal in Files, Copy Path), Ctrl+Enter reveals a
@@ -39,6 +40,7 @@ mod i18n;
 /// Rows shown at most.
 const ROWS: usize = 9;
 const WIDTH: f32 = 680.0;
+const PREVIEW_WIDTH: f32 = 360.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Mode {
@@ -156,6 +158,10 @@ enum Message {
     HomerOn(bool),
     /// After a restore, paste into the previous window (the overlay is gone).
     Paste,
+    /// Space: open or close Quick Look.
+    TogglePreview,
+    /// A preview finished loading; ignore it if `gen` is stale.
+    PreviewReady(u64, Option<iliada_search::preview::Preview>),
     Nothing,
 }
 
@@ -175,6 +181,13 @@ struct App {
     client: Arc<Mutex<Option<Client>>>,
     field: widget::Id,
     note: Option<String>,
+    /// Quick Look is open (Space). The picture or text may still be loading.
+    preview_open: bool,
+    preview: Option<iliada_search::preview::Preview>,
+    preview_loading: bool,
+    preview_stamp: u64,
+    /// Space was used to toggle the preview: drop the space the field would add.
+    ignore_space: bool,
 }
 
 impl App {
@@ -199,6 +212,8 @@ impl App {
         self.extras_of = None;
         self.selected = 0;
         self.note = None;
+        self.preview = None;
+        self.preview_loading = self.preview_open;
         match self.mode {
             Mode::Homer => {
                 self.hits = if self.homer {
@@ -254,6 +269,8 @@ impl App {
         self.mode = mode;
         self.query.clear();
         self.hits.clear();
+        self.preview_open = false;
+        self.preview = None;
         self.refresh();
         let id = window::Id::unique();
         self.surface = Some(id);
@@ -278,6 +295,8 @@ impl App {
     }
 
     fn hide(&mut self) -> Task<Message> {
+        self.preview_open = false;
+        self.preview = None;
         match self.surface.take() {
             Some(id) => destroy_layer_surface(id),
             None => Task::none(),
@@ -341,6 +360,25 @@ impl App {
                 }
             }
         }
+    }
+
+    fn request_preview(&mut self) -> Task<Message> {
+        if !self.preview_open {
+            return Task::none();
+        }
+        let Some(hit) = self.hits.get(self.selected).cloned() else {
+            self.preview = None;
+            self.preview_loading = false;
+            return Task::none();
+        };
+        self.preview_stamp = self.preview_stamp.wrapping_add(1);
+        let stamp = self.preview_stamp;
+        self.preview_loading = true;
+        let client = self.client.clone();
+        cosmic::task::future(async move {
+            let preview = tokio::task::spawn_blocking(move || fetch_preview(client, hit)).await.ok().flatten();
+            Message::PreviewReady(stamp, preview)
+        })
     }
 
     fn row<'a>(&self, i: usize, hit: &'a Hit) -> Element<'a, Message> {
@@ -408,10 +446,19 @@ impl App {
             (None, Mode::Search) if self.query.is_empty() => fl!("hint-search-empty"),
             (None, Mode::Search) => fl!("hint-search", ms = format!("{:.1}", self.micros as f64 / 1000.0)),
         };
-        col = col.push(widget::text::caption(hint));
-        let panel = widget::container(col.padding(spacing.space_s))
-            .width(Length::Fixed(WIDTH))
-            .class(cosmic::theme::Container::custom(frosted));
+        col = col.push(widget::text::caption(if self.preview_open { fl!("preview-close") } else { hint }));
+        let list = col.padding(spacing.space_s).width(Length::Fixed(WIDTH));
+        let body: Element<_> = if self.preview_open {
+            widget::row::with_capacity(2)
+                .push(list)
+                .push(widget::divider::vertical::light())
+                .push(self.preview_pane())
+                .width(Length::Fixed(WIDTH + PREVIEW_WIDTH + 8.0))
+                .into()
+        } else {
+            list.into()
+        };
+        let panel = widget::container(body).class(cosmic::theme::Container::custom(frosted));
         // The panel sits in the top third; a click anywhere else closes.
         let page = widget::column::with_capacity(3)
             .push(widget::space::vertical().height(Length::FillPortion(1)))
@@ -421,6 +468,21 @@ impl App {
             .width(Length::Fill)
             .height(Length::Fill);
         widget::mouse_area(page).on_press(Message::Hide).into()
+    }
+
+    fn preview_pane(&self) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+        let content: Element<_> = if self.preview_loading && self.preview.is_none() {
+            widget::text::caption(fl!("preview-loading")).into()
+        } else if let Some(p) = &self.preview {
+            preview_content(p)
+        } else {
+            widget::text::caption(fl!("preview-loading")).into()
+        };
+        widget::container(widget::scrollable(content).height(Length::Fixed(420.0)))
+            .padding(spacing.space_s)
+            .width(Length::Fixed(PREVIEW_WIDTH))
+            .into()
     }
 }
 
@@ -457,6 +519,75 @@ fn clipboard_subtitle(hit: &Hit) -> String {
         parts.push(fl!("from-app", app = hit.source.as_str()));
     }
     parts.join(", ")
+}
+
+fn fetch_preview(client: Arc<Mutex<Option<Client>>>, hit: Hit) -> Option<iliada_search::preview::Preview> {
+    if hit.clip_id != 0 {
+        let mut guard = client.lock().unwrap_or_else(|e| e.into_inner());
+        for _ in 0..2 {
+            if guard.is_none() {
+                *guard = Client::connect().ok();
+            }
+            if let Some(c) = guard.as_mut() {
+                match c.call(&Request::PreviewClipboard { id: hit.clip_id }) {
+                    Ok(iliada_search::Response::Preview { preview }) => return Some(preview),
+                    Ok(iliada_search::Response::Error { .. }) | Err(_) => *guard = None,
+                    Ok(_) => return None,
+                }
+            }
+        }
+        return None;
+    }
+    if let Some(path) = hit.path() {
+        let mut guard = client.lock().unwrap_or_else(|e| e.into_inner());
+        for _ in 0..2 {
+            if guard.is_none() {
+                *guard = Client::connect().ok();
+            }
+            if let Some(c) = guard.as_mut() {
+                match c.call(&Request::PreviewPath { path: path.to_owned() }) {
+                    Ok(iliada_search::Response::Preview { preview }) => return Some(preview),
+                    Err(_) => *guard = None,
+                    Ok(_) => break,
+                }
+            }
+        }
+        return Some(iliada_search::preview::for_path(path));
+    }
+    Some(iliada_search::preview::for_hit(&hit))
+}
+
+fn preview_content(p: &iliada_search::preview::Preview) -> Element<'_, Message> {
+    use iliada_search::preview::PreviewKind;
+    let spacing = cosmic::theme::spacing();
+    let mut col = widget::column::with_capacity(8).spacing(spacing.space_xxs);
+    col = col.push(widget::text::body(p.title.as_str()));
+    if (p.kind == PreviewKind::Image || p.kind == PreviewKind::Pdf)
+        && let Some(path) = &p.image
+    {
+        col = col.push(widget::image(widget::image::Handle::from_path(path.clone())).width(Length::Fill));
+    }
+    if !p.lines.is_empty() {
+        for line in &p.lines {
+            col = col.push(widget::text::caption(line.as_str()).font(cosmic::font::mono()));
+        }
+    }
+    if !p.text.is_empty() {
+        if !p.language.is_empty() && (p.language != "txt") {
+            col = col.push(highlighted_text(&p.text, &p.language));
+        } else {
+            col = col.push(widget::text::body(p.text.as_str()).font(cosmic::font::mono()).size(13));
+        }
+    }
+    col.into()
+}
+
+fn highlighted_text<'a>(text: &'a str, _language: &'a str) -> Element<'a, Message> {
+    let mut col = widget::column::with_capacity(text.lines().count().max(1));
+    for line in text.split_inclusive('\n') {
+        col = col.push(widget::text::body(line).font(cosmic::font::mono()).size(13));
+    }
+    col.into()
 }
 
 fn frosted(theme: &cosmic::Theme) -> widget::container::Style {
@@ -516,6 +647,11 @@ impl cosmic::Application for App {
             client: Arc::new(Mutex::new(Client::connect().ok())),
             field: widget::Id::unique(),
             note: None,
+            preview_open: false,
+            preview: None,
+            preview_loading: false,
+            preview_stamp: 0,
+            ignore_space: false,
         };
         let homer = cosmic::task::future(async {
             Message::HomerOn(iliada_system::client::status().await.map(|s| s.assistant.enabled).unwrap_or(false))
@@ -536,6 +672,7 @@ impl cosmic::Application for App {
                     Key::Named(Named::ArrowDown) => Some(Message::Down),
                     Key::Named(Named::Tab) => Some(Message::Extras),
                     Key::Named(Named::Enter) if modifiers.contains(Modifiers::CTRL) => Some(Message::Reveal),
+                    Key::Character(c) if c == " " && modifiers.is_empty() => Some(Message::TogglePreview),
                     _ => None,
                 }
             }
@@ -559,13 +696,27 @@ impl cosmic::Application for App {
                 return self.show(mode);
             }
             Message::Input(q) => {
-                self.query = q;
-                self.refresh();
+                let q = if self.ignore_space && q.len() == self.query.len() + 1 && q.ends_with(' ') {
+                    self.ignore_space = false;
+                    self.query.clone()
+                } else {
+                    self.ignore_space = false;
+                    q
+                };
+                if q != self.query {
+                    self.query = q;
+                    self.refresh();
+                    return self.request_preview();
+                }
             }
-            Message::Up => self.selected = self.selected.saturating_sub(1),
+            Message::Up => {
+                self.selected = self.selected.saturating_sub(1);
+                return self.request_preview();
+            }
             Message::Down => {
                 if self.selected + 1 < self.hits.len().min(ROWS) {
                     self.selected += 1;
+                    return self.request_preview();
                 }
             }
             Message::Activate(i) => {
@@ -603,11 +754,32 @@ impl cosmic::Application for App {
                 }
             }
             Message::Back => {
-                if let Some((hits, selected)) = self.extras_of.take() {
+                if self.preview_open {
+                    self.preview_open = false;
+                    self.preview = None;
+                    self.preview_loading = false;
+                } else if let Some((hits, selected)) = self.extras_of.take() {
                     self.hits = hits;
                     self.selected = selected;
                 } else {
                     return self.hide();
+                }
+            }
+            Message::TogglePreview => {
+                self.ignore_space = true;
+                if self.preview_open {
+                    self.preview_open = false;
+                    self.preview = None;
+                    self.preview_loading = false;
+                } else {
+                    self.preview_open = true;
+                    return self.request_preview();
+                }
+            }
+            Message::PreviewReady(stamp, preview) => {
+                if stamp == self.preview_stamp && self.preview_open {
+                    self.preview = preview;
+                    self.preview_loading = false;
                 }
             }
             Message::Hide => return self.hide(),

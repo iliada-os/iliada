@@ -33,6 +33,7 @@ pub mod clipboard;
 pub mod clipboard_watch;
 pub mod engine;
 pub mod files;
+pub mod preview;
 pub mod proto;
 pub mod recent;
 pub mod settings;

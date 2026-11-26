@@ -33,7 +33,11 @@
   images and files), kept on this computer only and encrypted, with pin,
   delete and a fuzzy filter; Enter pastes. Copies marked secret, and those
   from apps you exclude in Settings → Privacy, are never saved. History can
-  be turned off there too. Tiling's
+  be turned off there too. **Space** opens a Quick Look preview of the
+  selected result (text in a mono font, with light colouring of comments and
+  strings; images; the first page of a PDF when pdftoppm is there; a folder's
+  contents; an app's details). The preview loads in the background, so typing
+  is never blocked. Tiling's
   "toggle orientation" moved to Super+Shift+O.
 - **A new Search icon** in the dock, a short bronze magnifier in the
   Spotlight style.

@@ -60,6 +60,14 @@ pub enum Request {
         exclude: bool,
     },
     ClipboardConfig,
+    /// Quick Look for a file, folder or app path.
+    PreviewPath {
+        path: PathBuf,
+    },
+    /// Quick Look for a clipboard-history item.
+    PreviewClipboard {
+        id: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -86,6 +94,9 @@ pub enum Response {
     ClipboardConfig {
         enabled: bool,
         exclude: Vec<String>,
+    },
+    Preview {
+        preview: crate::preview::Preview,
     },
 }
 

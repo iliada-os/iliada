@@ -132,6 +132,32 @@ fn serve(engine: Arc<Engine>, store: Arc<Mutex<Store>>, stream: UnixStream) {
                 let c = s.config().clone();
                 Response::ClipboardConfig { enabled: c.enabled, exclude: c.exclude }
             }
+            Ok(Request::PreviewPath { path }) => Response::Preview { preview: iliada_search::preview::for_path(&path) },
+            Ok(Request::PreviewClipboard { id }) => {
+                let guard = clip(&store);
+                match guard.get(id).cloned() {
+                    Some(item) => {
+                        let blob = guard.blob(&item);
+                        drop(guard);
+                        let image_out = iliada_search::runtime_dir()
+                            .or_else(iliada_search::cache_dir)
+                            .map(|d| d.join("quicklook").join(format!("clip-{id}")));
+                        if let Some(p) = image_out.as_deref()
+                            && let Some(parent) = p.parent()
+                        {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        Response::Preview {
+                            preview: iliada_search::preview::for_clipboard(
+                                &item,
+                                blob.as_deref(),
+                                image_out.as_deref(),
+                            ),
+                        }
+                    }
+                    None => Response::Error { message: "that copy is no longer in the history".into() },
+                }
+            }
             Err(e) => Response::Error { message: format!("bad request: {e}") },
         };
         let Ok(mut out) = serde_json::to_vec(&reply) else { return };

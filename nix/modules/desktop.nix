@@ -132,7 +132,7 @@ in
       # Desktop entries are found as in the session (systemd's user
       # manager has no XDG_DATA_DIRS of its own).
       environment.XDG_DATA_DIRS = "%h/.local/share:%h/.nix-profile/share:/etc/profiles/per-user/%u/share:/run/current-system/sw/share:/var/lib/iliada-desktop";
-      path = [ pkgs.xdg-utils pkgs.wl-clipboard pkgs.wtype pkgs.lswt ];
+      path = [ pkgs.xdg-utils pkgs.wl-clipboard pkgs.wtype pkgs.lswt pkgs.poppler-utils ];
       serviceConfig = {
         ExecStart = "${config.iliada.package}/bin/iliada-searchd";
         Restart = "on-failure";
@@ -161,6 +161,7 @@ in
       pkgs.wl-clipboard
       pkgs.wtype
       pkgs.lswt
+      pkgs.poppler-utils
       # Filtered accessibility bus for sandboxed apps (Homer's app control).
       pkgs.xdg-dbus-proxy
       # agora, Iliada Settings and the Setup Assistant.
