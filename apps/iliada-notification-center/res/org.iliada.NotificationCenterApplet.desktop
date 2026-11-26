@@ -1,0 +1,15 @@
+[Desktop Entry]
+Name=Notification Center
+Name[el]=Κέντρο ειδοποιήσεων
+Comment=The time, and your notifications and Do Not Disturb
+Comment[el]=Η ώρα, οι ειδοποιήσεις σας και το Μην ενοχλείτε
+Type=Application
+Exec=iliada-notification-applet
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Applet;Notification;Clock;
+Icon=notification-symbolic
+NoDisplay=true
+X-CosmicApplet=true
+X-CosmicShrinkable=true
+X-HostWaylandDisplay=true

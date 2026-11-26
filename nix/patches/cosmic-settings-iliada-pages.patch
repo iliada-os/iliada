@@ -24,7 +24,7 @@ index fad2df7..5f557b3 100644
  anyhow = "1.0"
  ashpd = { version = "0.12", default-features = false, features = [
 diff --git a/cosmic-settings/src/app.rs b/cosmic-settings/src/app.rs
-index b77f643..96235f7 100644
+index b77f643..9cf46ca 100644
 --- a/cosmic-settings/src/app.rs
 +++ b/cosmic-settings/src/app.rs
 @@ -120,7 +120,9 @@ impl SettingsApp {
@@ -57,11 +57,12 @@ index b77f643..96235f7 100644
          #[cfg(feature = "page-networking")]
          app.insert_page::<networking::Page>();
          #[cfg(feature = "page-bluetooth")]
-@@ -230,8 +237,15 @@ impl cosmic::Application for SettingsApp {
+@@ -230,8 +237,16 @@ impl cosmic::Application for SettingsApp {
          #[cfg(feature = "page-input")]
          app.insert_page::<input::Page>();
          app.insert_page::<applications::Page>();
 +        app.insert_page::<crate::pages::iliada::Privacy>();
++        app.insert_page::<crate::pages::iliada::Notifications>();
 +        app.insert_page::<crate::pages::iliada::Homer>();
 +        app.insert_page::<crate::pages::iliada::Updates>();
 +        app.insert_page::<crate::pages::iliada::Backup>();
@@ -73,7 +74,7 @@ index b77f643..96235f7 100644
  
          let active_id = match flags.sub_command {
              Some(p) => app.subtask_to_page(&p),
-@@ -401,6 +415,10 @@ impl cosmic::Application for SettingsApp {
+@@ -401,6 +416,10 @@ impl cosmic::Application for SettingsApp {
              }
  
              Message::PageMessage(message) => match message {
@@ -100,11 +101,11 @@ index faf1a8f..b58601c 100644
  impl FromStr for PageCommands {
 diff --git a/cosmic-settings/src/pages/iliada.rs b/cosmic-settings/src/pages/iliada.rs
 new file mode 100644
-index 0000000..ba9d956
+index 0000000..8f65271
 --- /dev/null
 +++ b/cosmic-settings/src/pages/iliada.rs
-@@ -0,0 +1,99 @@
-+// Iliada's settings pages (the Iliada account, privacy, Homer, updates,
+@@ -0,0 +1,101 @@
++// Iliada's settings pages (the Iliada account, privacy, notifications, Homer, updates,
 +// backup, services, command-line tools, about, and the language under Time &
 +// Language) among COSMIC's own, so the computer has one Settings app. Each page shows Iliada's panel
 +// (iliada_settings::panel) for that page.
@@ -173,6 +174,7 @@ index 0000000..ba9d956
 +
 +iliada_page!(Account, IliadaPage::Account);
 +iliada_page!(Privacy, IliadaPage::Privacy);
++iliada_page!(Notifications, IliadaPage::Notifications);
 +iliada_page!(Homer, IliadaPage::Assistant);
 +iliada_page!(Updates, IliadaPage::Updates);
 +iliada_page!(Backup, IliadaPage::Backup);
@@ -190,6 +192,7 @@ index 0000000..ba9d956
 +    let panel = match page {
 +        IliadaPage::Account => pages.page_mut::<Account>().map(|p| &mut p.panel),
 +        IliadaPage::Privacy => pages.page_mut::<Privacy>().map(|p| &mut p.panel),
++        IliadaPage::Notifications => pages.page_mut::<Notifications>().map(|p| &mut p.panel),
 +        IliadaPage::Assistant => pages.page_mut::<Homer>().map(|p| &mut p.panel),
 +        IliadaPage::Updates => pages.page_mut::<Updates>().map(|p| &mut p.panel),
 +        IliadaPage::Backup => pages.page_mut::<Backup>().map(|p| &mut p.panel),

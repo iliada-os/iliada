@@ -1,5 +1,5 @@
 # Iliada's desktop apps: agora, Settings, the Setup Assistant, the
-# installer and the search overlay. One
+# installer, the search overlay and the Notification Center. One
 # cargo workspace (apps/), built separately from the core tools because it
 # depends on libcosmic (git dependencies, GPU rendering stack).
 { lib, rustPlatform, libcosmicAppHook, pkg-config, zstd, librsvg }:
@@ -48,7 +48,8 @@ rustPlatform.buildRustPackage {
       apps/iliada-store-gui/res/org.iliada.Agora.desktop \
       apps/iliada-settings/res/org.iliada.Settings.desktop \
       apps/iliada-settings/res/org.iliada.Setup.desktop \
-      apps/iliada-settings/res/org.iliada.Assistant.desktop
+      apps/iliada-settings/res/org.iliada.Assistant.desktop \
+      apps/iliada-notification-center/res/org.iliada.NotificationCenterApplet.desktop
     # Their icons (nix/branding/README.md): agora's stoa, Homer's coin,
     # the Settings gear, the Setup Assistant's wreath, the installer's ship.
     install -Dm644 -t $out/share/icons/hicolor/scalable/apps apps/*/res/org.iliada.*.svg

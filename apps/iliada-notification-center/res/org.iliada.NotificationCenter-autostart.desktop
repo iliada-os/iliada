@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Notification Center
+Comment=Iliada's Notification Center, waiting for Super+N
+Exec=iliada-notification-center
+NoDisplay=true
+X-GNOME-Autostart-Phase=Applications

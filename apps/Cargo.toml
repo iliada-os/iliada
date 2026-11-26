@@ -2,7 +2,7 @@
 # build of libcosmic for all of them.
 [workspace]
 resolver = "3"
-members = ["iliada-store-gui", "iliada-settings", "iliada-installer", "iliada-search-overlay"]
+members = ["iliada-store-gui", "iliada-settings", "iliada-installer", "iliada-search-overlay", "iliada-notification-center"]
 
 [workspace.package]
 version = "0.2.7"
@@ -18,6 +18,7 @@ iliada-types = { path = "../crates/iliada-types" }
 iliada-assistant = { path = "../crates/iliada-assistant" }
 iliada-account = { path = "../crates/iliada-account" }
 iliada-search = { path = "../crates/iliada-search" }
+iliada-notify = { path = "../crates/iliada-notify" }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 tokio = { version = "1", features = ["rt-multi-thread", "fs", "sync", "process"] }
 futures-util = "0.3"

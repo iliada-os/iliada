@@ -1,0 +1,28 @@
+[package]
+name = "iliada-notification-center"
+description = "Iliada's Notification Center: the panel that slides in from the right (Super+N) and its top bar button"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The panel: a layer-shell surface, started hidden with the session.
+[[bin]]
+name = "iliada-notification-center"
+path = "src/main.rs"
+
+# The top bar button (a COSMIC panel applet): the clock, and a bell or a
+# moon (Do Not Disturb). Clicking it opens the panel.
+[[bin]]
+name = "iliada-notification-applet"
+path = "src/bin/iliada-notification-applet.rs"
+
+[dependencies]
+iliada-notify.workspace = true
+iliada-search.workspace = true
+iliada-types.workspace = true
+tokio = { workspace = true, features = ["time", "net", "io-util"] }
+libcosmic = { workspace = true, features = ["applet"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+i18n-embed.workspace = true
+i18n-embed-fl.workspace = true
+rust-embed.workspace = true

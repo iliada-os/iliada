@@ -13,6 +13,7 @@ iliada-account.workspace = true
 iliada-store.workspace = true
 iliada-bundle.workspace = true
 iliada-types.workspace = true
+iliada-notify.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 serde.workspace = true

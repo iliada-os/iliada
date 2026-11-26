@@ -1,0 +1,29 @@
+diff --git a/src/app.rs b/src/app.rs
+index 99eca8c..c1e06da 100644
+--- a/src/app.rs
++++ b/src/app.rs
+@@ -32,7 +32,8 @@ use std::collections::VecDeque;
+ use std::time::Duration;
+ use tokio::sync::mpsc;
+ 
+-static NOTIFICATIONS_APPLET: &str = "com.system76.CosmicAppletNotifications";
++// Iliada: banners appear next to the Notification Center's button.
++static NOTIFICATIONS_APPLET: &str = "org.iliada.NotificationCenterApplet";
+ 
+ pub fn run() -> cosmic::iced::Result {
+     cosmic::app::run::<CosmicNotifications>(
+diff --git a/src/subscriptions/notifications.rs b/src/subscriptions/notifications.rs
+index 709bd9b..99eb5db 100644
+--- a/src/subscriptions/notifications.rs
++++ b/src/subscriptions/notifications.rs
+@@ -41,7 +41,9 @@ impl Conns {
+         for _ in 0..5 {
+             if let Some(conn) = ConnectionBuilder::session()
+                 .ok()
+-                .and_then(|conn| conn.name("org.freedesktop.Notifications").ok())
++                // Iliada: iliada-notifyd owns org.freedesktop.Notifications (the
++                // Notification Center) and hands the banners to show here.
++                .and_then(|conn| conn.name("org.iliada.NotificationBanners").ok())
+                 .and_then(|conn| {
+                     conn.serve_at(
+                         "/org/freedesktop/Notifications",

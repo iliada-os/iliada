@@ -1201,6 +1201,7 @@ dependencies = [
  "async-trait",
  "iliada-account",
  "iliada-bundle",
+ "iliada-notify",
  "iliada-store",
  "iliada-system",
  "iliada-types",
@@ -1282,6 +1283,7 @@ dependencies = [
  "iliada-account",
  "iliada-assistant",
  "iliada-bundle",
+ "iliada-notify",
  "iliada-store",
  "iliada-system",
  "rustix",
@@ -1369,6 +1371,33 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "iliada-notify"
+version = "0.2.7"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "iliada-types",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
+name = "iliada-notifyd"
+version = "0.2.7"
+dependencies = [
+ "anyhow",
+ "futures-util",
+ "iliada-notify",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "zbus",
 ]
 
 [[package]]

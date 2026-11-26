@@ -61,15 +61,17 @@ pub enum Page {
     Tools,
     Services,
     Privacy,
+    Notifications,
     Assistant,
     Language,
     About,
 }
 
 impl Page {
-    pub const ALL: [Page; 9] = [
+    pub const ALL: [Page; 10] = [
         Page::Account,
         Page::Privacy,
+        Page::Notifications,
         Page::Assistant,
         Page::Updates,
         Page::Backup,
@@ -89,6 +91,7 @@ impl Page {
             Page::Tools => "tools",
             Page::Services => "services",
             Page::Privacy => "privacy",
+            Page::Notifications => "notifications",
             Page::Assistant => "homer",
             Page::Language => "language",
             Page::About => "about",
@@ -107,6 +110,7 @@ impl Page {
             Page::Tools => fl!("page-tools"),
             Page::Services => fl!("page-services"),
             Page::Privacy => fl!("page-privacy"),
+            Page::Notifications => fl!("page-notifications"),
             Page::Assistant => fl!("page-homer"),
             Page::Language => fl!("page-language"),
             Page::About => fl!("page-about"),
@@ -121,6 +125,7 @@ impl Page {
             Page::Tools => fl!("page-tools-desc"),
             Page::Services => fl!("page-services-desc"),
             Page::Privacy => fl!("page-privacy-desc"),
+            Page::Notifications => fl!("page-notifications-desc"),
             Page::Assistant => fl!("page-homer-desc"),
             Page::Language => fl!("page-language-desc"),
             Page::About => fl!("page-about-desc"),
@@ -135,6 +140,7 @@ impl Page {
             Page::Tools => "utilities-terminal-symbolic",
             Page::Services => "network-server-symbolic",
             Page::Privacy => "security-high-symbolic",
+            Page::Notifications => "preferences-system-notifications-symbolic",
             Page::Assistant => "user-available-symbolic",
             Page::Language => "preferences-desktop-locale-symbolic",
             Page::About => "help-about-symbolic",
@@ -156,6 +162,21 @@ static FOLDER_CHOICES: std::sync::LazyLock<[String; 4]> = std::sync::LazyLock::n
     [fl!("folder-read-write"), fl!("folder-read-only"), fl!("folder-not-allowed"), fl!("folder-ask-next")]
 });
 const FOLDER_VALUES: [Value; 4] = [Value::ReadWrite, Value::ReadOnly, Value::Deny, Value::Ask];
+
+/// Whether Homer may read notifications, as Settings says it.
+static HOMER_NOTIFICATION_CHOICES: std::sync::LazyLock<[String; 3]> = std::sync::LazyLock::new(|| {
+    [fl!("homer-notifications-ask"), fl!("homer-notifications-allow"), fl!("homer-notifications-deny")]
+});
+const HOMER_NOTIFICATION_VALUES: [Value; 3] = [Value::Ask, Value::Allow, Value::Deny];
+
+/// One of an app's notification switches (Settings → Notifications).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppSwitch {
+    Allow,
+    Banners,
+    Sound,
+    History,
+}
 
 /// One capability's control: a dropdown for folders, a switch otherwise.
 fn permission_control<'a>(app: &str, e: &Entry, title: String) -> Element<'a, Message> {
@@ -287,6 +308,17 @@ pub enum Message {
     KeywordInput(String),
     SaveKeyword,
     CancelKeyword,
+    /// Settings → Notifications: Do Not Disturb now, its schedule
+    /// (on or off, and the times being typed), critical notifications.
+    Dnd(bool),
+    DndSchedule(bool),
+    DndFrom(String),
+    DndTo(String),
+    DndSaveTimes,
+    DndCritical(bool),
+    /// Whether Homer may read notifications (an index into the choices).
+    HomerNotifications(usize),
+    NotifyApp(String, AppSwitch, bool),
     /// Log out (to see a new language).
     LogOut,
     /// COSMIC Settings' keyboard page (layouts, shortcuts).
@@ -336,6 +368,11 @@ pub struct Panel {
     show_windows: bool,
     /// Choosing a keyword for this extension: its id, and what is typed.
     keyword_edit: Option<(String, String)>,
+    /// Settings → Notifications (`~/.config/iliada/notifications.toml`),
+    /// and the schedule's times as typed.
+    notify: iliada_notify::settings::Settings,
+    dnd_from: String,
+    dnd_to: String,
 }
 
 fn load_status() -> Task<Message> {
@@ -1051,6 +1088,117 @@ impl Panel {
         }
     }
 
+    fn load_notify(&mut self) {
+        self.notify = iliada_notify::settings::Settings::load_user();
+        self.dnd_from = self.notify.do_not_disturb.from.clone();
+        self.dnd_to = self.notify.do_not_disturb.to.clone();
+    }
+
+    /// Change Settings → Notifications and save it (the notification
+    /// service reads the file for every notification).
+    fn change_notify(&mut self, change: impl FnOnce(&mut iliada_notify::settings::Settings)) {
+        if let Err(e) = iliada_notify::settings::Settings::update(change) {
+            self.error = Some(fl!("save-failed", error = format!("{e:#}")));
+        }
+        let (from, to) = (self.dnd_from.clone(), self.dnd_to.clone());
+        self.load_notify();
+        // Times still being typed stay as typed.
+        self.dnd_from = from;
+        self.dnd_to = to;
+    }
+
+    fn notifications(&self) -> Element<'_, Message> {
+        use iliada_notify::dnd::{self, Clock, Why};
+        let space = cosmic::theme::spacing();
+        let d = &self.notify.do_not_disturb;
+        let now = dnd::status(d, &Clock::now());
+        let state = match now {
+            None => fl!("dnd-off"),
+            Some(Why::Manual) => fl!("dnd-on"),
+            Some(Why::Until { until }) => fl!("dnd-on-until", time = dnd::clock_time(until)),
+            Some(Why::Schedule { until }) => fl!("dnd-on-schedule", time = dnd::clock_time(until)),
+        };
+        let mut dnd_section = settings::section()
+            .title(fl!("dnd-section"))
+            .add(info(fl!("dnd-section"), Some(fl!("dnd-desc"))))
+            .add(settings::item::builder(fl!("dnd-now")).description(state).toggler(now.is_some(), Message::Dnd))
+            .add(
+                settings::item::builder(fl!("dnd-schedule"))
+                    .description(fl!("dnd-schedule-desc", from = d.from.as_str(), to = d.to.as_str()))
+                    .toggler(d.scheduled, Message::DndSchedule),
+            );
+        if d.scheduled {
+            let valid = dnd::parse_time(&self.dnd_from).is_some() && dnd::parse_time(&self.dnd_to).is_some();
+            let changed = self.dnd_from.trim() != d.from || self.dnd_to.trim() != d.to;
+            let row = widget::row::with_capacity(5)
+                .push(widget::text::body(fl!("dnd-from")))
+                .push(widget::text_input("23:00", &self.dnd_from).on_input(Message::DndFrom).width(Length::Fixed(90.0)))
+                .push(widget::text::body(fl!("dnd-to")))
+                .push(widget::text_input("07:00", &self.dnd_to).on_input(Message::DndTo).width(Length::Fixed(90.0)))
+                .push(
+                    widget::button::standard(fl!("dnd-save-times"))
+                        .on_press_maybe((valid && changed).then_some(Message::DndSaveTimes)),
+                )
+                .spacing(space.space_xs)
+                .align_y(Alignment::Center);
+            dnd_section = dnd_section.add(settings::item_row(vec![row.into()]));
+            if !valid {
+                dnd_section = dnd_section.add(info(fl!("dnd-times-hint"), None));
+            }
+        }
+        dnd_section = dnd_section.add(
+            settings::item::builder(fl!("dnd-critical"))
+                .description(fl!("dnd-critical-desc"))
+                .toggler(d.allow_critical, Message::DndCritical),
+        );
+
+        let homer = self.policy.homer_notifications();
+        let selected = HOMER_NOTIFICATION_VALUES.iter().position(|v| *v == homer);
+        let homer_section = settings::section().title(fl!("page-homer")).add(
+            settings::item::builder(fl!("homer-notifications"))
+                .description(fl!("homer-notifications-desc"))
+                .control(widget::dropdown(&HOMER_NOTIFICATION_CHOICES[..], selected, Message::HomerNotifications)),
+        );
+
+        let mut apps_section =
+            settings::section().title(fl!("notify-apps")).add(info(fl!("notify-apps"), Some(fl!("notify-apps-desc"))));
+        if self.notify.apps.is_empty() {
+            apps_section = apps_section.add(info(fl!("notify-apps-none"), None));
+        }
+        let mut apps: Vec<(&String, &iliada_notify::settings::AppRule)> = self.notify.apps.iter().collect();
+        apps.sort_by_key(|(id, r)| if r.name.is_empty() { id.to_lowercase() } else { r.name.to_lowercase() });
+        let mut col = widget::column::with_capacity(apps.len() + 3).spacing(space.space_m);
+        col = col.push(dnd_section).push(homer_section).push(apps_section);
+        for (id, rule) in apps {
+            let name = if rule.name.is_empty() { id.clone() } else { rule.name.clone() };
+            let switch = |s: AppSwitch| {
+                let id = id.clone();
+                move |on| Message::NotifyApp(id.clone(), s, on)
+            };
+            let mut app = settings::section().title(name).add(
+                settings::item::builder(fl!("notify-allow"))
+                    .description(id.clone())
+                    .toggler(rule.allow, switch(AppSwitch::Allow)),
+            );
+            if rule.allow {
+                app = app
+                    .add(
+                        settings::item::builder(fl!("notify-banners"))
+                            .description(fl!("notify-banners-desc"))
+                            .toggler(rule.banners, switch(AppSwitch::Banners)),
+                    )
+                    .add(settings::item::builder(fl!("notify-sound")).toggler(rule.sound, switch(AppSwitch::Sound)))
+                    .add(
+                        settings::item::builder(fl!("notify-history"))
+                            .description(fl!("notify-history-desc"))
+                            .toggler(rule.history, switch(AppSwitch::History)),
+                    );
+            }
+            col = col.push(app);
+        }
+        col.into()
+    }
+
     fn load_clipboard(&mut self) {
         let (enabled, exclude) = load_clipboard_settings();
         self.clip_enabled = enabled;
@@ -1325,6 +1473,9 @@ impl Panel {
             confirm_clear_clipboard: false,
             show_windows: true,
             keyword_edit: None,
+            notify: Default::default(),
+            dnd_from: String::new(),
+            dnd_to: String::new(),
         }
     }
 
@@ -1347,6 +1498,10 @@ impl Panel {
         }
         if self.page() == Page::Account {
             return Task::batch([load_status(), self.account.refresh().map(account_action)]);
+        }
+        if self.page() == Page::Notifications {
+            self.load_notify();
+            self.policy = Policy::load();
         }
         if self.page() == Page::Privacy {
             self.extra_isolation = load_extra_isolation();
@@ -1710,6 +1865,50 @@ impl Panel {
                     }
                 }
             }
+            Message::Dnd(on) => {
+                if let Err(e) = iliada_notify::dnd::switch(on, None) {
+                    self.error = Some(fl!("save-failed", error = format!("{e:#}")));
+                }
+                self.load_notify();
+            }
+            Message::DndSchedule(on) => self.change_notify(|s| {
+                s.do_not_disturb.scheduled = on;
+                s.do_not_disturb.paused_until = None;
+            }),
+            Message::DndFrom(t) => self.dnd_from = t,
+            Message::DndTo(t) => self.dnd_to = t,
+            Message::DndSaveTimes => {
+                let (from, to) = (self.dnd_from.trim().to_owned(), self.dnd_to.trim().to_owned());
+                if let (Some(f), Some(t)) = (iliada_notify::dnd::parse_time(&from), iliada_notify::dnd::parse_time(&to))
+                {
+                    let (from, to) = (hhmm(f), hhmm(t));
+                    self.change_notify(|s| {
+                        s.do_not_disturb.from = from;
+                        s.do_not_disturb.to = to;
+                        s.do_not_disturb.paused_until = None;
+                    });
+                }
+            }
+            Message::DndCritical(on) => self.change_notify(|s| s.do_not_disturb.allow_critical = on),
+            Message::HomerNotifications(i) => {
+                let value = HOMER_NOTIFICATION_VALUES[i.min(HOMER_NOTIFICATION_VALUES.len() - 1)];
+                let programs = policy::installed_programs();
+                if let Err(e) = self.policy.edit(&programs, |p| {
+                    p.set_homer_notifications(value);
+                    Ok(())
+                }) {
+                    self.error = Some(fl!("save-failed", error = e.to_string()));
+                }
+            }
+            Message::NotifyApp(app, switch, on) => self.change_notify(|s| {
+                let rule = s.apps.entry(app).or_default();
+                match switch {
+                    AppSwitch::Allow => rule.allow = on,
+                    AppSwitch::Banners => rule.banners = on,
+                    AppSwitch::Sound => rule.sound = on,
+                    AppSwitch::History => rule.history = on,
+                }
+            }),
             Message::ShowWindows(on) => match set_show_windows(on) {
                 Ok(()) => self.show_windows = on,
                 Err(e) => self.error = Some(fl!("search-setting-failed", error = format!("{e:#}"))),
@@ -1789,7 +1988,7 @@ impl Panel {
                 if let Some(b) = self.banner() {
                     col = col.push(b);
                 }
-                if matches!(self.page(), Page::Account) {
+                if matches!(self.page(), Page::Account | Page::Notifications) {
                     // Each person's own: no administrator needed.
                 } else if !s.admin {
                     col = col.push(card(widget::text::body(fl!("admin-only")).into()));
@@ -1804,6 +2003,7 @@ impl Panel {
                     Page::Tools => self.tools(s),
                     Page::Services => self.services(s),
                     Page::Privacy => self.privacy(),
+                    Page::Notifications => self.notifications(),
                     Page::Assistant => self.assistant(s),
                     Page::Language => self.language(s),
                     Page::About => self.about(s),
@@ -1812,6 +2012,11 @@ impl Panel {
             }
         }
     }
+}
+
+/// Minutes since midnight as "HH:MM".
+fn hhmm(minutes: u32) -> String {
+    format!("{:02}:{:02}", minutes / 60, minutes % 60)
 }
 
 fn account_action(m: account::Msg) -> cosmic::Action<Message> {

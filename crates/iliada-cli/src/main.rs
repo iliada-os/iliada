@@ -10,6 +10,7 @@
 //!   iliada assistant status | on | off | mode ask|auto | model <id> | key
 //!   iliada assistant email status | set <address> [--server …] | test <to> | remove
 //!   iliada permissions [list | show <app> | set <app> <capability> <value> | reset [<app>] | check] [--json]
+//!   iliada dnd on|off|toggle|status [--until HH:MM | --for 1h]   (Do Not Disturb)
 //!   iliada report                                    (this computer's hardware, to share for help)
 //!
 //! Apps are `.app` bundles from agora (no rebuild, no root). Everything
@@ -17,6 +18,7 @@
 //! administrator; no sudo. Everything here is also in the Settings app.
 
 mod account;
+mod dnd;
 mod homer;
 mod permissions;
 mod report;
@@ -138,6 +140,8 @@ enum Cmd {
     },
     /// What every app may use: list, show, set, reset, check, limit (`--json` for agents).
     Permissions(permissions::Args),
+    /// Do Not Disturb: no banners and no sounds; notifications still go to the Notification Center.
+    Dnd(dnd::Args),
     /// Save a report on this computer's hardware (graphics, screens, Wi-Fi,
     /// sound, sleep, errors) as a text file, to share when something doesn't work.
     Report {
@@ -506,6 +510,7 @@ async fn main() -> Result<()> {
         Cmd::Ask { text, .. } => ask(text.join(" ")).await?,
         Cmd::Assistant { cmd } => assistant(cmd, v).await?,
         Cmd::Permissions(args) => permissions::run(args).await?,
+        Cmd::Dnd(args) => dnd::run(args)?,
     }
     Ok(())
 }

@@ -130,6 +130,33 @@ sees what you type after its keyword. Settings → Privacy → Search lists
 them, and turns them off. To write one, see
 [search-extensions.md](search-extensions.md).
 
+## Notifications and Do Not Disturb
+
+Notifications pop up at the top right, then wait in the **Notification
+Center**: click the clock in the top bar, or press **Super+N**. They are
+grouped by app, newest first. Click one to open it in its app, use its
+buttons, collapse an app's group, or clear an app's notifications (Clear)
+or all of them (Clear All). Esc or a click outside closes the panel. The
+last 200 are kept across restarts.
+
+**Do Not Disturb** holds back banners and sounds; notifications still go
+to the Notification Center, and the top bar shows a moon. Switch it at the
+top of the panel, with **Super+Shift+N**, in Settings → **Notifications**
+(also on a schedule, say 23:00 to 07:00), or:
+
+```sh
+iliada dnd on --for 1h
+iliada dnd on --until 07:30
+iliada dnd off
+iliada dnd status
+```
+
+Critical notifications (a battery about to run out) still show unless
+you turn that off in Settings → Notifications. There, each app that has
+sent a notification can be allowed or not, with banners, sounds, and
+"Show in history" (off: its notifications are never saved). Homer can tell
+you what you missed, and asks first unless you allow it there.
+
 ## Update
 
 Apps update on their own. Iliada itself: Settings → **Updates** →

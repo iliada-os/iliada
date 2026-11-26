@@ -16,6 +16,7 @@ version = 1
 [homer]
 control = true          # Settings > Homer > Use other apps
 screen = "ask"          # screenshots and the virtual mouse and keyboard; allow | deny | ask
+notifications = "ask"   # reading your notifications (Settings > Notifications); allow | deny | ask (asked each time)
 
 [apps."org.gimp.GIMP"]
 name = "GIMP"
@@ -89,9 +90,13 @@ An app only gets a decided capability its recipe declares; otherwise it is
 `not-requested`. `controlled_by_homer` is the exception: it is about Homer,
 not a request from the app, so it is always decided.
 
-The `[homer]` table is the global switch (`control`) and the whole-screen
-grant (`screen`). `/etc/iliada/permissions.toml` can only set `control =
-false` or `controlled_by_homer = "deny"` (or `screen = "deny"`).
+The `[homer]` table is the global switch (`control`), the whole-screen
+grant (`screen`), and reading the person's notifications
+(`notifications`, ADR 0010: the Notification Center's history, for
+"what did I miss?"; `ask`, the default, asks each time, and it does not
+depend on `control`). `/etc/iliada/permissions.toml` can only set `control
+= false` or `controlled_by_homer = "deny"` (or `screen = "deny"`,
+`notifications = "deny"`).
 
 ## JSON
 

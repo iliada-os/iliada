@@ -56,6 +56,14 @@ in
         cosmic-files = prev.cosmic-files.overrideAttrs (old: {
           patches = (old.patches or [ ]) ++ [ ../patches/cosmic-files-app-bundles.patch ];
         });
+        # The Notification Center (ADR 0010): iliada-notifyd owns
+        # org.freedesktop.Notifications and hands the banners to show to
+        # COSMIC's notification daemon, which answers on
+        # org.iliada.NotificationBanners instead, and places them next to
+        # the Notification Center's button in the top bar.
+        cosmic-notifications = prev.cosmic-notifications.overrideAttrs (old: {
+          patches = (old.patches or [ ]) ++ [ ../patches/cosmic-notifications-iliada.patch ];
+        });
         # One Settings app: COSMIC Settings shows Iliada's pages (account,
         # privacy, Homer, updates, backup…) among its own. Iliada's source
         # goes next to it (the pages are iliada_settings::panel), and the
@@ -124,6 +132,36 @@ in
     # show it (iliada-search starts it if it is not running).
     environment.etc."xdg/autostart/org.iliada.SearchOverlay.desktop".source =
       ../../apps/iliada-search-overlay/res/org.iliada.SearchOverlay-autostart.desktop;
+    # The Notification Center's panel waits, hidden, from login, so Super+N
+    # and the clock in the top bar only have to show it.
+    environment.etc."xdg/autostart/org.iliada.NotificationCenter.desktop".source =
+      ../../apps/iliada-notification-center/res/org.iliada.NotificationCenter-autostart.desktop;
+    # The notification service (ADR 0010): every app's notifications, the
+    # Notification Center's history, Do Not Disturb and the per-app rules.
+    # Started by the bus the first time an app sends a notification.
+    systemd.user.services.iliada-notifyd = {
+      description = "Iliada notifications: the Notification Center and Do Not Disturb";
+      wantedBy = [ "default.target" ];
+      # pw-play plays notification sounds.
+      path = [ pkgs.pipewire ];
+      environment.ILIADA_NOTIFICATION_SOUND = "${pkgs.sound-theme-freedesktop}/share/sounds/freedesktop/stereo/message.oga";
+      environment.XDG_DATA_DIRS = "%h/.local/share:/etc/profiles/per-user/%u/share:/run/current-system/sw/share";
+      serviceConfig = {
+        Type = "dbus";
+        BusName = "org.freedesktop.Notifications";
+        ExecStart = "${config.iliada.package}/bin/iliada-notifyd";
+        Restart = "on-failure";
+        RestartSec = 2;
+      };
+    };
+    services.dbus.packages = [
+      (pkgs.writeTextDir "share/dbus-1/services/org.freedesktop.Notifications.service" ''
+        [D-BUS Service]
+        Name=org.freedesktop.Notifications
+        Exec=${config.iliada.package}/bin/iliada-notifyd
+        SystemdService=iliada-notifyd.service
+      '')
+    ];
     # The search service: the home folder's index, in memory, kept current,
     # and clipboard history (data-control, which sandboxed apps are refused).
     systemd.user.services.iliada-searchd = {
@@ -257,7 +295,8 @@ in
         # launcher: Super shows it, Super+O asks Homer, Super+V is the
         # clipboard history, Super+Escape stops Homer in an app. Tiling's "toggle orientation" moves from Super+O to
         # Super+Shift+O. Alt+Space still opens Homer's quick panel
-        # (Super+Space stays the keyboard-layout switch). The dock's Search
+        # (Super+Space stays the keyboard-layout switch). Super+N opens the
+        # Notification Center, Super+Shift+N switches Do Not Disturb. The dock's Search
         # button runs the launcher's desktop entry, replaced below.
         keys=$out/share/cosmic/com.system76.CosmicSettings.Shortcuts/v1
         mkdir -p $keys
@@ -270,8 +309,19 @@ in
             (modifiers: [Super], key: "v"): Spawn("iliada-search clipboard"),
             (modifiers: [Super], key: "Escape"): Spawn("iliada-control stop"),
             (modifiers: [Alt], key: "space"): Spawn("iliada-ask"),
+            (modifiers: [Super], key: "n"): Spawn("iliada-notification-center toggle"),
+            (modifiers: [Super, Shift], key: "n"): Spawn("iliada dnd toggle"),
         }
         EOF
+        # The top bar: the Notification Center's button (the clock, and a
+        # bell, or a moon during Do Not Disturb) at the right end, in place
+        # of COSMIC's clock in the middle and its notifications applet.
+        bar=$out/share/cosmic/com.system76.CosmicPanel.Panel/v1
+        mkdir -p $bar
+        cat > $bar/plugins_wings <<'EOF'
+        Some((["com.system76.CosmicPanelWorkspacesButton", "com.system76.CosmicPanelAppButton"],["com.system76.CosmicAppletInputSources","com.system76.CosmicAppletA11y", "com.system76.CosmicAppletStatusArea", "com.system76.CosmicAppletTiling", "com.system76.CosmicAppletAudio", "com.system76.CosmicAppletBluetooth", "com.system76.CosmicAppletNetwork", "com.system76.CosmicAppletBattery", "com.system76.CosmicAppletPower", "org.iliada.NotificationCenterApplet"]))
+        EOF
+        echo 'Some([])' > $bar/plugins_center
         install -m644 ${../../apps/iliada-search-overlay/res/com.system76.CosmicLauncher.desktop} \
           $apps/com.system76.CosmicLauncher.desktop
         # Frosted glass: windows, the panel and dock, their menus and the

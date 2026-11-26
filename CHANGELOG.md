@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **Notification Center**: notifications wait in a panel at the right of
+  the screen, grouped by app, newest first. Click the clock in the top bar
+  or press Super+N. Click a notification to open it in its app, use its
+  buttons, collapse a group, Clear an app's or Clear All. The last 200 are
+  kept across restarts, except from apps whose "Show in history" is off and
+  from permission prompts and other protected windows.
+- **Do Not Disturb**: no banners and no sounds, while notifications still
+  go to the Notification Center, and a moon in the top bar. Switch it in
+  the panel, with Super+Shift+N, in Settings → Notifications (also on a
+  schedule), with `iliada dnd on|off|status [--until HH:MM | --for 1h]`, or
+  ask Homer. Critical notifications still show unless you turn that off.
+- **Settings → Notifications**: Do Not Disturb, its schedule, and for each
+  app that has sent a notification: allow, banners, sounds, and show in
+  history. Notifications now play a sound (the app's own, or the message
+  sound), except low-urgency ones.
+- **Homer and notifications**: "what did I miss?" reads your recent
+  notifications, and Homer can clear them and switch Do Not Disturb.
+  Reading them is a permission (`[homer] notifications` in the permissions
+  file, or Settings → Notifications): Homer asks each time unless you allow
+  it.
+
 - **Search extensions from agora**: an extension adds its own results to
   Search under a keyword. Type the keyword and a space, then what you
   want: `color #ff0000` shows the hex, rgb and hsl values to copy. An

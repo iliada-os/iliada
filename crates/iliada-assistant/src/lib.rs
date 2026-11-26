@@ -388,6 +388,17 @@ impl Assistant {
                         });
                         r
                     }
+                } else if tools::asks_to_read(name) {
+                    // Reading something private (notifications) that the
+                    // person wants to be asked about each time.
+                    let action = tools::describe(name, input);
+                    if ui.approve(&action).await {
+                        self.audit(name, input, "read");
+                        tools::run_in(&self.store, name, input, self.workdir.as_deref()).await
+                    } else {
+                        self.audit(name, input, "declined");
+                        Err(anyhow::anyhow!("the person declined: {action}"))
+                    }
                 } else {
                     tools::run_in(&self.store, name, input, self.workdir.as_deref()).await
                 };

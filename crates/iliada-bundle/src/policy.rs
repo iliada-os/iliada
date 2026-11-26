@@ -472,7 +472,8 @@ impl fmt::Display for Problem {
     }
 }
 
-/// The `[homer]` table: the global switch and the whole-screen grant.
+/// The `[homer]` table: the global switch, the whole-screen grant, and
+/// reading notifications.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HomerSection {
     /// `None`: not written. Defaults to on for a person, and not off for
@@ -480,6 +481,9 @@ pub struct HomerSection {
     pub control: Option<bool>,
     /// Screenshots and the virtual mouse and keyboard. `None`: ask.
     pub screen: Option<Value>,
+    /// Reading the person's notifications (the Notification Center's
+    /// history). `None`: ask.
+    pub notifications: Option<Value>,
 }
 
 /// One file, read. `broken`: Iliada could not read it at all, so every
@@ -614,24 +618,19 @@ fn parse_homer(t: &toml::Table, layer: Layer, problem: &mut dyn FnMut(Option<&st
                 (Layer::System, Some(false)) => s.control = Some(false),
                 (Layer::User, Some(b)) => s.control = Some(b),
             },
-            "screen" => {
+            key @ ("screen" | "notifications") => {
                 let Some(value) = v.as_str().and_then(Value::parse) else {
-                    problem(
-                        Some("screen"),
-                        format!("{v} is not a value Iliada knows (use allow, deny or ask); ignored"),
-                    );
+                    problem(Some(key), format!("{v} is not a value Iliada knows (use allow, deny or ask); ignored"));
                     continue;
                 };
+                let slot = if key == "screen" { &mut s.screen } else { &mut s.notifications };
                 match layer {
-                    Layer::System if value == Value::Deny => s.screen = Some(Value::Deny),
-                    Layer::System => {
-                        problem(Some("screen"), format!("\"{value}\" cannot be a limit (use deny); ignored"))
+                    Layer::System if value == Value::Deny => *slot = Some(Value::Deny),
+                    Layer::System => problem(Some(key), format!("\"{value}\" cannot be a limit (use deny); ignored")),
+                    Layer::User if matches!(value, Value::Allow | Value::Deny | Value::Ask) => *slot = Some(value),
+                    Layer::User => {
+                        problem(Some(key), format!("\"{value}\" does not apply here (use allow, deny or ask); ignored"))
                     }
-                    Layer::User if matches!(value, Value::Allow | Value::Deny | Value::Ask) => s.screen = Some(value),
-                    Layer::User => problem(
-                        Some("screen"),
-                        format!("\"{value}\" does not apply here (use allow, deny or ask); ignored"),
-                    ),
                 }
             }
             _ => problem(Some(k), "is not something [homer] can hold; ignored".into()),
@@ -953,6 +952,24 @@ impl Policy {
             return Value::Deny;
         }
         self.user.homer.screen.unwrap_or(Value::Ask)
+    }
+
+    /// Whether Homer may read the person's notifications (allow, deny, or
+    /// ask each time). The computer can only deny it. Unlike using other
+    /// apps, this does not depend on `control`: it is Homer reading, not
+    /// acting.
+    pub fn homer_notifications(&self) -> Value {
+        if !self.readable() || self.system.homer.notifications == Some(Value::Deny) {
+            return Value::Deny;
+        }
+        self.user.homer.notifications.unwrap_or(Value::Ask)
+    }
+
+    /// Set it (allow, deny or ask; anything else is ignored).
+    pub fn set_homer_notifications(&mut self, v: Value) {
+        if matches!(v, Value::Allow | Value::Deny | Value::Ask) {
+            self.user.homer.notifications = Some(v);
+        }
     }
 
     pub fn problems(&self) -> Vec<Problem> {
@@ -1391,6 +1408,7 @@ fn quote(s: &str) -> String {
 fn render_homer(user: &HomerSection, system_off: bool) -> String {
     let on = user.control.unwrap_or(true);
     let screen = user.screen.unwrap_or(Value::Ask);
+    let notifications = user.notifications.unwrap_or(Value::Ask);
     let mut s = String::from(
         "
 [homer]
@@ -1416,6 +1434,16 @@ fn render_homer(user: &HomerSection, system_off: bool) -> String {
         "screen = {}
 ",
         quote(screen.name())
+    ));
+    s.push_str(
+        "# Reading your notifications (Settings > Notifications): what they say
+         # can be private. allow | deny | ask (asked each time)
+",
+    );
+    s.push_str(&format!(
+        "notifications = {}
+",
+        quote(notifications.name())
     ));
     s
 }
@@ -1455,8 +1483,9 @@ const HEADER: &str = "\
 # Machine-readable: `iliada permissions --json` (docs/permissions-schema.md).
 #
 # [homer] is the global switch for Homer using other apps (Settings >
-# Homer > Use other apps), and `screen` for screenshots and the virtual
-# mouse and keyboard. `controlled_by_homer` on each app is whether Homer
+# Homer > Use other apps), `screen` for screenshots and the virtual
+# mouse and keyboard, and `notifications` for reading your notifications.
+# `controlled_by_homer` on each app is whether Homer
 # may use that app (allow, deny or ask). It is decided for every app,
 # including built-in ones.
 
@@ -2056,5 +2085,27 @@ mod tests {
         assert!(p.set(&term, Key::ControlledByHomer, Value::Allow).is_ok());
         assert!(p.set(&term, Key::Network, Value::Deny).is_err());
         assert_eq!(p.report(&term).get(Key::ControlledByHomer).value, Value::Allow);
+    }
+
+    #[test]
+    fn homer_reading_notifications_is_in_the_permissions_file() {
+        let t = tempfile::tempdir().unwrap();
+        let mut p = policy(t.path(), None, None);
+        assert_eq!(p.homer_notifications(), Value::Ask);
+        p.set_homer_notifications(Value::Allow);
+        p.save(&[gimp()]).unwrap();
+        let text = std::fs::read_to_string(t.path().join("user.toml")).unwrap();
+        assert!(text.contains("notifications = \"allow\""), "{text}");
+        let p = policy(t.path(), Some(text.as_str()), None);
+        assert_eq!(p.homer_notifications(), Value::Allow);
+        // Not tied to using other apps; the computer can only deny it.
+        let p = policy(t.path(), Some(text.as_str()), Some("[homer]\ncontrol = false\n"));
+        assert_eq!(p.homer_notifications(), Value::Allow);
+        let p = policy(t.path(), Some(text.as_str()), Some("[homer]\nnotifications = \"deny\"\n"));
+        assert_eq!(p.homer_notifications(), Value::Deny);
+        let fresh = tempfile::tempdir().unwrap();
+        let p = policy(fresh.path(), Some("[homer]\nnotifications = \"read-only\"\n"), None);
+        assert_eq!(p.homer_notifications(), Value::Ask);
+        assert!(!p.problems().is_empty());
     }
 }
