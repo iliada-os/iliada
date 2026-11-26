@@ -166,8 +166,10 @@ pub fn plan(
         HostShare { tag: "app".into(), host: spec.bundle.clone(), readonly: true },
         HostShare { tag: "data".into(), host: spec.data_dir.clone(), readonly: false },
     ];
-    for (i, (folder, _)) in spec.grants.folders.iter().enumerate() {
-        shares.push(HostShare { tag: format!("f{i}"), host: folder.clone(), readonly: false });
+    let folders = spec.grants.folders.iter().map(|(f, _)| (f, false));
+    let read_only = spec.grants.read_only_folders.iter().map(|(f, _)| (f, true));
+    for (i, (folder, readonly)) in folders.chain(read_only).enumerate() {
+        shares.push(HostShare { tag: format!("f{i}"), host: folder.clone(), readonly });
     }
 
     let net = (spec.network == NetworkPolicy::Nat && host.passt.is_some()).then(|| dir.join("net.sock"));
@@ -547,12 +549,13 @@ mod tests {
     fn plan_shares_store_app_and_data_and_runs_the_tier1_sandbox_through_waypipe() {
         let mut s = spec();
         s.grants.folders.push(("/home/alex/Pictures".into(), "Pictures".into()));
+        s.grants.read_only_folders.push(("/home/alex/Music".into(), "Music".into()));
         let host = HostIsolationConfig::example();
         s.network = NetworkPolicy::None;
         let p = plan(&s, &host, Path::new("/run/user/1000/iliada-vm/org.debian.jq"), &HostDesktop::default(), &[]);
 
         let tags: Vec<_> = p.shares.iter().map(|s| (s.tag.as_str(), s.readonly)).collect();
-        assert_eq!(tags, [("store", true), ("app", true), ("data", false), ("f0", false)]);
+        assert_eq!(tags, [("store", true), ("app", true), ("data", false), ("f0", false), ("f1", true)]);
         assert_eq!(p.guest.shares[1].path, "/Applications/jq.app", "mounted at the host path");
         assert_eq!(value_after(&p.vmm_args, "--memory"), Some("size=512M,shared=on"));
         assert!(p.vmm_args.iter().any(|a| a.starts_with("tag=spec,socket=")));

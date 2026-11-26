@@ -76,7 +76,7 @@ about the person).
    conversations; restore on a fresh install (verified in the installed VM). Built as the
    `iliada-account` crate: a code approved on the website gives the computer
    its own token; the account key is made on the first computer and shown
-   once as a 32-character recovery key; `~/.config/cosmic`, `permissions.toml`
+   once as a 32-character recovery key; `~/.config/cosmic`, `~/.config/iliada/permissions.toml`
    and `conversations/` are packed (tar + zstd), sealed with
    XChaCha20-Poly1305 (the name of what is kept is authenticated too) and
    uploaded as `settings`; a user timer backs up hourly when something

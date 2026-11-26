@@ -21,6 +21,7 @@ mod error;
 mod info;
 mod layout;
 mod permissions;
+pub mod policy;
 pub mod processor;
 mod provenance;
 

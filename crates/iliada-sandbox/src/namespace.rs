@@ -159,6 +159,9 @@ fn bwrap_prefix(spec: &SandboxSpec, host: &HostIsolationConfig, desktop: &HostDe
     for (host_dir, name) in &spec.grants.folders {
         push(&["--bind", &p(host_dir), &format!("/home/app/{name}")]);
     }
+    for (host_dir, name) in &spec.grants.read_only_folders {
+        push(&["--ro-bind", &p(host_dir), &format!("/home/app/{name}")]);
+    }
     if spec.grants.camera {
         for dev in video_devices() {
             push(&["--dev-bind", &dev, &dev]);
@@ -412,6 +415,15 @@ mod tests {
         assert_eq!(after(&a, "--ro-bind", "/run/user/1000/pulse/native"), Some("/run/user/app/pulse/native"));
         assert_eq!(after(&a, "--bind", "/home/alex/Documents/report.odt"), Some("/home/alex/Documents/report.odt"));
         assert!(!a.iter().any(|x| x.contains("/home/alex/Documents/") && !x.ends_with("report.odt")));
+    }
+
+    #[test]
+    fn read_only_folders_are_bound_read_only() {
+        let (_t, mut spec) = fixture(NetworkPolicy::None, true);
+        spec.grants.read_only_folders.push(("/home/alex/Music".into(), "Music".into()));
+        let a = bwrap_args(&spec, &HostIsolationConfig::example(), &HostDesktop::default());
+        assert_eq!(after(&a, "--ro-bind", "/home/alex/Music"), Some("/home/app/Music"));
+        assert_eq!(after(&a, "--bind", "/home/alex/Music"), None);
     }
 
     #[test]

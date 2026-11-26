@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 iliada-store.workspace = true
 iliada-catalog.workspace = true
+iliada-bundle.workspace = true
 reqwest.workspace = true
 tokio.workspace = true
 libcosmic.workspace = true

@@ -70,6 +70,8 @@ pub struct SandboxSpec {
 pub struct Grants {
     /// `(host folder, its name in the app's home)`: Pictures, Documents, …
     pub folders: Vec<(PathBuf, String)>,
+    /// Folders allowed for reading only, bound the same way but read-only.
+    pub read_only_folders: Vec<(PathBuf, String)>,
     /// Camera devices (`/dev/video*`).
     pub camera: bool,
     /// The sound server's sockets (PipeWire and its PulseAudio server).

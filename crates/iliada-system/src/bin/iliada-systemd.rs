@@ -284,6 +284,24 @@ impl Service {
             }
             Request::Restore { repo } => self.restore(&repo, &log).await,
             Request::RestoreSettings { settings, apps } => self.restore_settings(&settings, &apps, &log).await,
+            Request::SetPermissionLimit { app, capability, limit } => {
+                let path = self.dir.join("permissions.toml");
+                let text = match std::fs::read_to_string(&path) {
+                    Ok(t) => t,
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+                    Err(e) => return Err(e.into()),
+                };
+                let (new, what) = iliada_system::limits::set(&text, &app, &capability, limit.as_deref())?;
+                if new == text {
+                    return Ok(json!({ "changed": false }));
+                }
+                let tmp = path.with_extension("toml.tmp");
+                std::fs::write(&tmp, &new)?;
+                std::fs::rename(&tmp, &path)?;
+                init::commit_all(&self.dir, &what)?;
+                self.back_up_quietly().await;
+                Ok(json!({ "changed": true, "change": what }))
+            }
             Request::BackupSignOut => {
                 self.backups.set_token(None)?;
                 self.backups.save(&backup::State::default())?;

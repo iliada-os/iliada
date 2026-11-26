@@ -15,6 +15,7 @@ pub mod backup;
 pub mod client;
 pub mod github;
 pub mod init;
+pub mod limits;
 pub mod protocol;
 pub mod settings;
 pub mod software;

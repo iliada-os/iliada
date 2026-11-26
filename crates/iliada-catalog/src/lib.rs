@@ -52,6 +52,12 @@ pub struct AppEntry {
     pub archives: Archives,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// What the app may ask for, as the permissions file names it
+    /// (`files.pictures`, `camera`, `microphone`, `sound`, …; ADR 0007), so
+    /// agora can show what it could reach before it is installed. `None`:
+    /// the catalog predates the list (not "asks for nothing").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<Vec<String>>,
 }
 
 /// Archives by processor, named as Rust names them (`std::env::consts::ARCH`).
@@ -132,7 +138,13 @@ impl Catalog {
             .filter_map(|a| {
                 let mut x86 = a.archive_for("x86_64")?.clone();
                 let version = x86.version.take().unwrap_or_else(|| a.version.clone());
-                Some(AppEntry { version, archive: Some(x86), archives: Archives::default(), ..a.clone() })
+                Some(AppEntry {
+                    version,
+                    archive: Some(x86),
+                    archives: Archives::default(),
+                    permissions: None,
+                    ..a.clone()
+                })
             })
             .collect();
         Catalog { format: LEGACY_FORMAT, generated: self.generated, apps }
@@ -212,6 +224,7 @@ mod tests {
             archive,
             archives,
             icon: None,
+            permissions: None,
         }
     }
 

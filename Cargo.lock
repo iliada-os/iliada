@@ -1173,6 +1173,7 @@ version = "0.2.7"
 dependencies = [
  "iliada-types",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "toml",
@@ -1212,6 +1213,7 @@ dependencies = [
  "clap",
  "iliada-account",
  "iliada-assistant",
+ "iliada-bundle",
  "iliada-store",
  "iliada-system",
  "rustix",
@@ -1351,6 +1353,7 @@ dependencies = [
  "anyhow",
  "clap",
  "hex",
+ "iliada-bundle",
  "iliada-catalog",
  "iliada-ingest",
  "reqwest",

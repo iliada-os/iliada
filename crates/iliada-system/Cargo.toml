@@ -14,6 +14,7 @@ path = "src/bin/iliada-systemd.rs"
 [dependencies]
 iliada-catalog.workspace = true
 iliada-ingest.workspace = true
+iliada-bundle.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

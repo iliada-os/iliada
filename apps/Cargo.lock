@@ -3014,6 +3014,7 @@ version = "0.2.7"
 dependencies = [
  "iliada-types",
  "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "toml 0.8.23",
 ]
@@ -3149,6 +3150,7 @@ name = "iliada-store-gui"
 version = "0.2.7"
 dependencies = [
  "futures-util",
+ "iliada-bundle",
  "iliada-catalog",
  "iliada-settings",
  "iliada-store",
@@ -3165,6 +3167,7 @@ dependencies = [
  "anyhow",
  "clap",
  "hex",
+ "iliada-bundle",
  "iliada-catalog",
  "iliada-ingest",
  "reqwest",

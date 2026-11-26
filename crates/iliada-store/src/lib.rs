@@ -370,6 +370,7 @@ mod tests {
             archive: None,
             archives: Archives::default(),
             icon: None,
+            permissions: None,
         };
         let a = Archive {
             url: archive.display().to_string(),

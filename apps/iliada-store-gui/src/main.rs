@@ -13,6 +13,7 @@ use cosmic::iced::{Alignment, Length, Size};
 use cosmic::widget::{self, nav_bar};
 use cosmic::{ApplicationExt, Core, Element, executor};
 use futures_util::StreamExt;
+use iliada_bundle::policy::{AppFacts, Policy};
 use iliada_catalog::{AppEntry, Catalog};
 use iliada_settings::Progress;
 use iliada_store::translate::{self, DebianApp};
@@ -21,6 +22,29 @@ use iliada_system::protocol::{Request, Status as SystemStatus};
 use iliada_system::software::{CATALOG as SOFTWARE, Item, Kind};
 
 const CATEGORIES: [&str; 6] = ["Internet", "Office", "Graphics", "Media", "Utilities", "Games"];
+
+/// What an app could reach before it is installed, from the capabilities its
+/// recipe declares (ADR 0007): the same generated words as Settings → Privacy.
+fn capabilities(app: &AppEntry) -> String {
+    match &app.permissions {
+        Some(asks) => {
+            let r = Policy::preview(&AppFacts::from_catalog(
+                &app.id,
+                &app.name,
+                app.network,
+                asks.iter().map(String::as_str),
+            ));
+            format!(
+                "Can touch: {}.\nWorst case, if you allow everything it asks for: {}",
+                r.summary.join(", "),
+                r.worst_case
+            )
+        }
+        None => "This catalog does not list what the app asks for. It has to ask you before it uses a folder, \
+                 the camera or the microphone; the clipboard and the screen are not restricted yet."
+            .to_owned(),
+    }
+}
 
 fn main() -> cosmic::iced::Result {
     let settings = Settings::default().size(Size::new(960.0, 720.0));
@@ -99,10 +123,11 @@ impl App {
         if app.network {
             meta.push_str("  ·  Uses the internet");
         }
-        let text = widget::column::with_capacity(3)
+        let text = widget::column::with_capacity(5)
             .push(widget::text::title4(app.name.as_str()))
             .push(widget::text::body(app.summary.as_str()))
             .push(widget::text::caption(meta))
+            .push(widget::text::caption(capabilities(app)))
             .spacing(spacing.space_xxxs)
             .width(Length::Fill);
 

@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
-use iliada_bundle::decisions::{Decision, Decisions, key as permission_key};
+use iliada_bundle::policy::{self, AppFacts, Key, Policy, Rule, SCHEMA, Value as Access};
 use iliada_store::{Store, StoreConfig};
 use iliada_system::client;
 use iliada_system::protocol::{AssistantMode, Request, Status};
@@ -42,7 +42,7 @@ pub fn all() -> Vec<Tool> {
         },
         Tool {
             name: "search_store",
-            description: "Apps available in agora (name, id, category, summary, whether it uses the internet, whether it is installed), and, with a query, desktop apps from Debian that are not in agora yet (from: \"debian\"; install_app can build them). Optional query filters by name or summary.",
+            description: "Apps available in agora (name, id, category, summary, whether it uses the internet, whether it is installed, what it may ask for and its worst case if everything were allowed), and, with a query, desktop apps from Debian that are not in agora yet (from: \"debian\"; install_app can build them). Optional query filters by name or summary.",
             schema: obj(json!({ "query": { "type": "string" } }), &[]),
             acts: false,
             full_access: false,
@@ -146,17 +146,28 @@ pub fn all() -> Vec<Tool> {
         },
         Tool {
             name: "list_permissions",
-            description: "For each installed app: what it may ask for (folders, camera, microphone) and what the user decided.",
-            schema: none(),
+            description: "What apps may use on this computer, exactly as Iliada enforces it (from ~/.config/iliada/permissions.toml and the computer's limits). \
+                Without app: every program at a glance (sandboxed apps, and built-in programs and command-line tools, which are not sandboxed and can do whatever the person can). \
+                With app: every capability with its value (allow, deny, ask, read-write, read-only, not-requested, unrestricted), who decided it, its exact scope (folder paths), and whether it is enforced. \
+                Each app has generated `summary`, `risk` and `worst_case` texts: use them to answer questions like \"could this app delete my photos\" or \"could it send my files online\" precisely. \
+                `unrestricted` means Iliada cannot restrict it yet: say so plainly, never imply it is safe.",
+            schema: obj(
+                json!({ "app": { "type": "string", "description": "App name or id; omit for every app" } }),
+                &[],
+            ),
             acts: false,
             full_access: false,
         },
         Tool {
             name: "set_permission",
-            description: "Allow or deny an app a permission it declares. permission: \"camera\", \"microphone\", or \"files.documents\" / \"files.downloads\" / \"files.music\" / \"files.pictures\" / \"files.videos\". Applies the next time the app opens.",
+            description: "Propose changing what an app may use. The person always confirms first (widening or narrowing), and it applies the next time the app opens. \
+                capability: network, camera, microphone, sound, files.documents, files.downloads, files.music, files.pictures or files.videos. \
+                value: allow, deny or ask; for folders read-write, read-only, deny or ask. Only what the app declares can be allowed; \
+                capabilities Iliada cannot restrict yet (clipboard, screen capture, background) or never gives (notifications, location, devices, system changes) cannot be changed. \
+                Suggest narrowing when an app has more than it needs.",
             schema: obj(
-                json!({ "app": { "type": "string" }, "permission": { "type": "string" }, "allow": { "type": "boolean" } }),
-                &["app", "permission", "allow"],
+                json!({ "app": { "type": "string" }, "capability": { "type": "string" }, "value": { "type": "string" } }),
+                &["app", "capability", "value"],
             ),
             acts: true,
             full_access: false,
@@ -271,11 +282,13 @@ pub fn important(name: &str) -> Option<&'static str> {
 
 /// Does `name` wait for the person's yes? In Ask mode every action does;
 /// in Auto mode the important ones they haven't let it do on its own,
-/// and changing what it may do on its own, always: text it reads (an
-/// email, a web page) must never be able to give it more freedom.
+/// and changing what it may do on its own, or what an app may use, always:
+/// text it reads (an email, a web page) must never be able to give it, or
+/// an app, more freedom.
 pub fn asks_first(name: &str, mode: AssistantMode, on_its_own: &[String]) -> bool {
     mode == AssistantMode::Ask
         || name == "allow_on_its_own"
+        || name == "set_permission"
         || important(name).is_some_and(|kind| !on_its_own.iter().any(|k| k == kind))
 }
 
@@ -321,7 +334,7 @@ pub fn target(name: &str, input: &Value) -> Option<String> {
             format!("tools:{}", p.join(","))
         }
         "set_service" => format!("service:{}", s(input, "name")),
-        "set_permission" => format!("permission:{}:{}", s(input, "app"), s(input, "permission")),
+        "set_permission" => format!("permission:{}:{}", s(input, "app").to_lowercase(), s(input, "capability")),
         "set_appearance" => "appearance".into(),
         _ => return None,
     })
@@ -341,7 +354,10 @@ pub fn undo(name: &str, input: &Value) -> Option<(&'static str, Value)> {
         "add_tools" => ("remove_tools", input.clone()),
         "remove_tools" => ("add_tools", input.clone()),
         "set_service" => ("set_service", flip("on")),
-        "set_permission" => ("set_permission", flip("allow")),
+        "set_permission" => {
+            let previous = input["previous"].as_str()?;
+            ("set_permission", json!({ "app": input["app"], "capability": input["capability"], "value": previous }))
+        }
         "allow_on_its_own" => ("allow_on_its_own", flip("allow")),
         "set_appearance" => ("set_appearance", flip("dark")),
         _ => return None,
@@ -393,14 +409,57 @@ pub fn describe(name: &str, input: &Value) -> String {
             )
         }
         "back_up_now" => "Back up now".into(),
-        "set_permission" => format!(
-            "{} {} {}",
-            if input["allow"].as_bool() == Some(true) { "Allow" } else { "Deny" },
-            s(input, "app"),
-            s(input, "permission").replace("files.", "the folder ")
-        ),
+        "set_permission" => describe_permission(input),
         other => other.to_owned(),
     }
+}
+
+/// The app, capability and value a `set_permission` names, checked.
+fn permission_change(input: &Value) -> Result<(AppFacts, Key, Access)> {
+    let apps = policy::installed_programs();
+    let a = policy::find(&apps, s(input, "app")).with_context(|| format!("{:?} is not installed", s(input, "app")))?;
+    let key = Key::parse(s(input, "capability"))
+        .with_context(|| format!("{:?} is not a capability", s(input, "capability")))?;
+    let value = policy::parse_choice(key, s(input, "value"))
+        .with_context(|| format!("{:?} is not a value for {}", s(input, "value"), key.name()))?;
+    Ok((a.clone(), key, value))
+}
+
+/// Add what an action needs to be undone later (before it runs): for a
+/// permission, the value it had.
+pub fn prepare(name: &str, input: &Value) -> Value {
+    let mut input = input.clone();
+    if name == "set_permission"
+        && let Ok((a, key, _)) = permission_change(&input)
+    {
+        let r = Policy::load().report(&a);
+        input["previous"] = json!(r.get(key).setting.name());
+    }
+    input
+}
+
+/// "Let GIMP read and change your Pictures folder (now: it can only read it)."
+fn describe_permission(input: &Value) -> String {
+    let Ok((a, key, value)) = permission_change(input) else {
+        return format!("Change what {} may use: {} {}", s(input, "app"), s(input, "capability"), s(input, "value"));
+    };
+    let p = Policy::load();
+    let now = p.report(&a);
+    let what = match (key.folder(), value) {
+        (Some(d), Access::ReadWrite) => {
+            format!("Let {} read, change and delete everything in your {} folder", a.name, d.name())
+        }
+        (Some(d), Access::ReadOnly) => format!("Let {} read your {} folder, but not change it", a.name, d.name()),
+        (_, Access::Deny) => format!("Stop {} from using {}", a.name, key.label().to_lowercase()),
+        (_, Access::Ask) => format!("Have {} ask again before using {}", a.name, key.label().to_lowercase()),
+        _ => format!("Let {} use {}", a.name, key.label().to_lowercase()),
+    };
+    let mut after = p.clone();
+    let worst = match after.set(&a, key, value) {
+        Ok(()) => after.report(&a).worst_case,
+        Err(e) => format!("(This will not work: {e}.)"),
+    };
+    format!("{what} (now: {}). Worst case afterwards: {worst}", now.get(key).value)
 }
 
 /// Installed bundles (id, name, path, bundle).
@@ -447,9 +506,17 @@ pub async fn run_in(store: &Store, name: &str, input: &Value, cwd: Option<&std::
                 .iter()
                 .filter(|a| q.is_empty() || a.name.to_lowercase().contains(&q) || a.summary.to_lowercase().contains(&q))
                 .map(|a| {
-                    json!({ "name": a.name, "id": a.id, "category": a.category, "summary": a.summary,
+                    let mut v = json!({ "name": a.name, "id": a.id, "category": a.category, "summary": a.summary,
                             "uses_internet": a.network, "version": a.version, "from": "store",
-                            "installed": installed.get(&a.id).map(|i| i.version.clone()) })
+                            "installed": installed.get(&a.id).map(|i| i.version.clone()) });
+                    // What it could reach if everything it asks for were allowed (newer catalogs list it).
+                    if let Some(asks) = &a.permissions {
+                        let f = AppFacts::from_catalog(&a.id, &a.name, a.network, asks.iter().map(String::as_str));
+                        let r = Policy::preview(&f);
+                        v["may_ask_for"] = json!(asks);
+                        v["worst_case_if_allowed"] = json!(r.worst_case);
+                    }
+                    v
                 })
                 .collect();
             if !q.is_empty() {
@@ -577,40 +644,45 @@ pub async fn run_in(store: &Store, name: &str, input: &Value, cwd: Option<&std::
             Value::Object(out)
         }
         "list_permissions" => {
-            let d = Decisions::default_path().map(|p| Decisions::load(&p)).unwrap_or_default();
-            Value::Array(
-                installed_bundles()
+            let apps = policy::installed_programs();
+            let p = Policy::load();
+            let problems = p.problems();
+            let wanted = s(input, "app");
+            if wanted.is_empty() {
+                let apps: Vec<Value> = apps
                     .iter()
-                    .map(|b| {
-                        let perms: Vec<Value> = b
-                            .permissions
-                            .requests
-                            .iter()
-                            .map(|r| {
-                                json!({ "permission": permission_key(&r.capability),
-                                        "decided": d.get(b.info.id.as_str(), &r.capability).map(|x| format!("{x:?}").to_lowercase()) })
-                            })
+                    .map(|a| {
+                        let r = p.report(a);
+                        if !r.sandboxed {
+                            return json!({ "app": r.name, "id": r.id, "source": r.source, "sandboxed": false,
+                                           "worst_case": r.worst_case });
+                        }
+                        let caps: serde_json::Map<String, Value> = r
+                            .capabilities
+                            .values()
+                            .filter(|e| e.value != Access::NotRequested && !matches!(e.key.rule(), Rule::Never { .. }))
+                            .map(|e| (e.key.name().to_owned(), json!(e.value)))
                             .collect();
-                        json!({ "app": b.info.name, "id": b.info.id.as_str(), "permissions": perms })
+                        json!({ "app": r.name, "id": r.id, "source": r.source, "sandboxed": true,
+                                "isolation": r.isolation, "summary": r.summary, "worst_case": r.worst_case,
+                                "asks_next_time": r.asks, "capabilities": caps })
                     })
-                    .collect(),
-            )
+                    .collect();
+                json!({ "schema": SCHEMA, "readable": p.readable(), "problems": problems, "apps": apps,
+                        "note": "Capabilities that are not-requested or that sandboxes never get are left out; ask with app for every one." })
+            } else {
+                let a = policy::find(&apps, wanted).with_context(|| format!("{wanted:?} is not installed"))?;
+                json!({ "schema": SCHEMA, "readable": p.readable(), "problems": problems, "apps": [p.report(a)] })
+            }
         }
         "set_permission" => {
-            let b = find_installed(s(input, "app"))?;
-            let wanted = s(input, "permission");
-            let req = b
-                .permissions
-                .requests
-                .iter()
-                .find(|r| permission_key(&r.capability) == wanted)
-                .with_context(|| format!("{} does not ask for {wanted:?}", b.info.name))?;
-            let allow = input["allow"].as_bool().context("\"allow\" must be true or false")?;
-            let path: PathBuf = Decisions::default_path().context("HOME is not set")?;
-            let mut d = Decisions::load(&path);
-            d.set(b.info.id.as_str(), &req.capability, if allow { Decision::Allow } else { Decision::Deny });
-            d.save(&path)?;
-            json!({ "app": b.info.name, "permission": wanted, "allowed": allow, "applies": "next time the app opens" })
+            let (a, key, value) = permission_change(input)?;
+            let apps = policy::installed_programs();
+            let mut p = Policy::load();
+            p.edit(&apps, |p| p.set(&a, key, value)).map_err(anyhow::Error::msg)?;
+            let r = p.report(&a);
+            json!({ "app": a.name, "capability": key.name(), "value": value, "in_effect": r.get(key).value,
+                    "note": r.get(key).note, "worst_case_now": r.worst_case, "applies": "next time the app opens" })
         }
         "set_appearance" => {
             let dark = input["dark"].as_bool().context("\"dark\" must be true or false")?;
@@ -776,6 +848,8 @@ mod tests {
         // Changing what it may do on its own always asks: no email or web
         // page it reads can widen it.
         assert!(asks_first("allow_on_its_own", Auto, &messages));
+        // So does changing what an app may use, widening or narrowing.
+        assert!(asks_first("set_permission", Auto, &messages));
         assert_eq!(
             describe("allow_on_its_own", &json!({ "kind": "messages", "allow": true })),
             "Send messages and emails without asking you first"
@@ -795,10 +869,19 @@ mod tests {
             Some(("set_appearance", json!({ "dark": true })))
         );
         assert_eq!(undo("send_email", &json!({})), None);
+        assert_eq!(
+            undo(
+                "set_permission",
+                &json!({ "app": "GIMP", "capability": "network", "value": "deny", "previous": "allow" })
+            ),
+            Some(("set_permission", json!({ "app": "GIMP", "capability": "network", "value": "allow" })))
+        );
+        assert_eq!(undo("set_permission", &json!({ "app": "GIMP", "capability": "network", "value": "deny" })), None);
         assert_eq!(undo("run_command", &json!({})), None);
-        for (name, input) in
-            [("remove_tools", json!({ "packages": ["jq"] })), ("set_permission", json!({ "allow": true }))]
-        {
+        for (name, input) in [
+            ("remove_tools", json!({ "packages": ["jq"] })),
+            ("set_permission", json!({ "app": "x", "capability": "camera", "value": "allow", "previous": "deny" })),
+        ] {
             assert!(acts(undo(name, &input).unwrap().0));
         }
     }
