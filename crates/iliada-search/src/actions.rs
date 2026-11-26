@@ -70,6 +70,7 @@ pub fn perform(action: &Action) -> Result<()> {
         Action::AskHomer(text) => spawn(&homer_command(text)),
         Action::Appearance(dark) => set_dark(*dark),
         Action::RestoreClipboard { id, paste } => restore_clipboard(*id, *paste),
+        Action::FocusWindow { identifier } => focus_window(identifier),
         Action::ClipboardPin { .. } | Action::ClipboardDelete(_) | Action::ClipboardClear | Action::MoveTo(_) => {
             Ok(()) // the overlay talks to the search service, or handles these itself
         }
@@ -83,6 +84,15 @@ fn restore_clipboard(id: u64, paste: bool) -> Result<()> {
         crate::clipboard::paste()?;
     }
     Ok(())
+}
+
+/// Only the search service knows the open windows (and may switch to one).
+pub fn focus_window(identifier: &str) -> Result<()> {
+    let mut c = crate::proto::Client::connect().context("the search service is not running")?;
+    match c.call(&crate::Request::FocusWindow { identifier: identifier.to_owned() })? {
+        crate::Response::Error { message } => anyhow::bail!(message),
+        _ => Ok(()),
+    }
 }
 
 /// Homer's quick panel, asked `text` at once.

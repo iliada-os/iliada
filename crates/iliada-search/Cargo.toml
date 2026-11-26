@@ -1,6 +1,6 @@
 [package]
 name = "iliada-search"
-description = "Iliada's search: an in-memory index of apps, files, Settings and agora, and the search service (iliada-searchd)."
+description = "Iliada's search: an in-memory index of apps, files, Settings, agora and open windows, and the search service (iliada-searchd)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -18,6 +18,7 @@ path = "src/bin/iliada-search.rs"
 
 [dependencies]
 iliada-store.workspace = true
+iliada-types.workspace = true
 iliada-catalog.workspace = true
 anyhow.workspace = true
 serde.workspace = true
@@ -40,6 +41,10 @@ getrandom = "0.3"
 # Clipboard watching (data-control); only the unsandboxed search service uses this.
 wayland-client = "0.31"
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+# Open windows for Search (ext-foreign-toplevel-list), and focusing one
+# (COSMIC's toplevel info and management). Same revision as the apps use.
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+cosmic-protocols = { git = "https://github.com/pop-os/cosmic-protocols", rev = "c0cff4d", default-features = false, features = ["client"] }
 
 [dev-dependencies]
 tempfile.workspace = true

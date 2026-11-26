@@ -12,6 +12,7 @@ use crate::apps::App;
 use crate::files::FileIndex;
 use crate::settings::{ACTIONS, PAGES};
 use crate::usage::Usage;
+use crate::windows::{Window, listable};
 use crate::{Action, Hit, Icon, Kind, actions, calc};
 
 /// Everything the search knows. Each part is swapped or updated on its
@@ -28,10 +29,20 @@ pub struct Engine {
     pub recent: Option<PathBuf>,
     /// The home folder is being indexed (results may be missing files).
     pub indexing: std::sync::atomic::AtomicBool,
+    /// Open windows, in the compositor's order (kept current by
+    /// [`crate::windows::watch`]).
+    pub windows: RwLock<Vec<Window>>,
+    /// Settings → Privacy → Search: show open windows.
+    pub show_windows: std::sync::atomic::AtomicBool,
 }
 
 /// Rows of each kind, at most.
 const FILES: usize = 12;
+const WINDOWS: usize = 8;
+
+/// An open window comes before its app's "open a new window" row when it
+/// matches about as well.
+const WINDOW_LEAD: i64 = 60;
 
 /// Words that make a query a question or a request for Homer: his row
 /// then comes first.
@@ -75,6 +86,37 @@ fn file_icon(path: &Path, dir: bool) -> Icon {
         _ => "text-x-generic",
     };
     Icon::Name(name.into())
+}
+
+/// The app a window belongs to: its desktop entry's id is the window's
+/// app id, or ends with it (`firefox` → `org.mozilla.firefox`), or the
+/// other way round.
+fn app_for<'a>(apps: &'a [App], app_id: &str) -> Option<&'a App> {
+    let want = app_id.trim_end_matches(".desktop");
+    if want.is_empty() {
+        return None;
+    }
+    apps.iter()
+        .find(|a| a.id.eq_ignore_ascii_case(want))
+        .or_else(|| apps.iter().find(|a| last_part(&a.id).eq_ignore_ascii_case(want)))
+        .or_else(|| apps.iter().find(|a| a.id.eq_ignore_ascii_case(last_part(want))))
+}
+
+/// `org.mozilla.firefox` → `firefox`.
+fn last_part(id: &str) -> &str {
+    id.rsplit('.').next().unwrap_or(id)
+}
+
+/// A result for an open window: its title, its app's name and icon.
+pub fn window_hit(w: &Window, app: Option<&App>) -> Hit {
+    let name = app.map_or_else(|| w.app_id.clone(), |a| a.name.clone());
+    let title = if w.title.trim().is_empty() { name.clone() } else { w.title.clone() };
+    let icon = app.and_then(|a| a.icon.clone()).unwrap_or_else(|| {
+        Icon::Name(if w.app_id.is_empty() { "application-x-executable".into() } else { w.app_id.clone() })
+    });
+    let mut h = Hit::new(Kind::Window, title, Action::FocusWindow { identifier: w.identifier.clone() }).subtitle(name);
+    h.icon = Some(icon);
+    h
 }
 
 /// A result for a file or folder.
@@ -156,12 +198,18 @@ impl Engine {
             usage: Mutex::new(usage),
             recent,
             indexing: std::sync::atomic::AtomicBool::new(false),
+            windows: RwLock::new(Vec::new()),
+            show_windows: std::sync::atomic::AtomicBool::new(true),
         }
     }
 
     /// The results for `query`, best first.
     pub fn search(&self, query: &str, homer: bool, limit: usize) -> Vec<Hit> {
         let limit = limit.clamp(1, 50);
+        // `w ` lists open windows only.
+        if let Some(words) = query.trim_start().strip_prefix("w ") {
+            return self.windows_only(words.trim(), limit);
+        }
         let q = query.trim();
         if q.is_empty() {
             return self.empty(limit);
@@ -189,7 +237,8 @@ impl Engine {
         let usage = self.usage.lock().unwrap_or_else(|e| e.into_inner());
         let mut fz = Fuzzy::new(q);
 
-        for app in self.apps.read().unwrap_or_else(|e| e.into_inner()).iter() {
+        let apps = self.apps.read().unwrap_or_else(|e| e.into_inner());
+        for app in apps.iter() {
             let name = fz.close(&app.name, &lower);
             let other = [&app.generic, &app.keywords, &app.comment]
                 .iter()
@@ -206,6 +255,24 @@ impl Engine {
             h.score = 1200 + best + usage.boost(&h.key);
             hits.push(h);
         }
+        if self.show_windows.load(std::sync::atomic::Ordering::Relaxed) {
+            let mut found = Vec::new();
+            for w in self.windows.read().unwrap_or_else(|e| e.into_inner()).iter() {
+                if !listable(&w.app_id, &w.title) {
+                    continue;
+                }
+                let app = app_for(&apps, &w.app_id);
+                let mut h = window_hit(w, app);
+                let Some(best) = fz.close(&w.title, &lower).max(fz.close(&h.subtitle, &lower)) else { continue };
+                let boost = app.map_or(0, |a| usage.boost(&format!("app:{}", a.id)));
+                h.score = 1200 + WINDOW_LEAD + best + boost;
+                found.push(h);
+            }
+            found.sort_by_key(|h| std::cmp::Reverse(h.score));
+            found.truncate(WINDOWS);
+            hits.extend(found);
+        }
+        drop(apps);
         for page in PAGES {
             if let Some(s) = fz.close(page.title, &lower).or_else(|| fz.word(page.words, &lower)) {
                 let mut h = page.hit();
@@ -275,6 +342,34 @@ impl Engine {
         if hits.len() < limit && q.chars().count() >= 2 {
             hits.push(web_hit(q));
         }
+        hits
+    }
+
+    /// `w `: open windows only. With nothing after it, every open window,
+    /// the most recently focused first (then in the compositor's order).
+    fn windows_only(&self, q: &str, limit: usize) -> Vec<Hit> {
+        if !self.show_windows.load(std::sync::atomic::Ordering::Relaxed) {
+            return Vec::new();
+        }
+        let apps = self.apps.read().unwrap_or_else(|e| e.into_inner());
+        let windows = self.windows.read().unwrap_or_else(|e| e.into_inner());
+        let open = windows.iter().filter(|w| listable(&w.app_id, &w.title));
+        if q.is_empty() {
+            let mut v: Vec<&Window> = open.collect();
+            v.sort_by_key(|w| std::cmp::Reverse(w.focused));
+            return v.into_iter().take(limit).map(|w| window_hit(w, app_for(&apps, &w.app_id))).collect();
+        }
+        let lower = q.to_lowercase();
+        let mut fz = Fuzzy::new(q);
+        let mut hits: Vec<Hit> = open
+            .filter_map(|w| {
+                let mut h = window_hit(w, app_for(&apps, &w.app_id));
+                h.score = fz.close(&w.title, &lower).max(fz.close(&h.subtitle, &lower))?;
+                Some(h)
+            })
+            .collect();
+        hits.sort_by_key(|h| std::cmp::Reverse(h.score));
+        hits.truncate(limit);
         hits
     }
 
@@ -467,6 +562,21 @@ mod tests {
         Engine::new(files, apps, offers, usage, None)
     }
 
+    fn window(title: &str, app_id: &str, identifier: &str, focused: u64) -> Window {
+        Window { title: title.into(), app_id: app_id.into(), identifier: identifier.into(), focused }
+    }
+
+    fn with_windows() -> Engine {
+        let e = engine();
+        *e.windows.write().unwrap() = vec![
+            window("Inbox (3) - Mail", "firefox", "w1", 2),
+            window("notes.md", "cosmic-term", "w2", 0),
+            window("Allow Firefox to use the camera?", "org.iliada.Prompt", "w3", 3),
+            window("Rust docs", "org.mozilla.firefox", "w4", 5),
+        ];
+        e
+    }
+
     fn titles(e: &Engine, q: &str, homer: bool) -> Vec<String> {
         e.search(q, homer, 8).into_iter().map(|h| h.title).collect()
     }
@@ -518,6 +628,40 @@ mod tests {
         assert_eq!(h.iter().map(|h| h.title.as_str()).collect::<Vec<_>>(), vec!["Alpha", "alpine.txt"]);
         let h = e.search(&format!("{}/", d.path().display()), false, 8);
         assert_eq!(h.len(), 3);
+        // `w `: open windows only, the most recently focused first; never a
+        // protected one.
+        let e = with_windows();
+        let h = e.search("w ", false, 8);
+        assert!(h.iter().all(|h| h.kind == Kind::Window));
+        assert_eq!(
+            h.iter().map(|h| h.title.as_str()).collect::<Vec<_>>(),
+            ["Rust docs", "Inbox (3) - Mail", "notes.md"]
+        );
+        let h = e.search("w term", false, 8);
+        assert_eq!(h.len(), 1);
+        assert_eq!(h[0].action, Action::FocusWindow { identifier: "w2".into() });
+        assert!(e.search("w camera", false, 8).is_empty());
+        // "w" alone is an ordinary search.
+        assert!(e.search("w", false, 8).iter().any(|h| h.kind != Kind::Window));
+    }
+
+    #[test]
+    fn open_windows_come_before_their_app() {
+        let e = with_windows();
+        let h = e.search("firefox", false, 8);
+        assert_eq!(h[0].kind, Kind::Window);
+        assert_eq!(h[0].subtitle, "Firefox");
+        let app = h.iter().position(|h| h.kind == Kind::App && h.title == "Firefox").unwrap();
+        assert!(h[..app].iter().all(|h| h.kind == Kind::Window));
+        assert_eq!(app, 2, "both Firefox windows, then the app");
+        // By title.
+        assert_eq!(e.search("inbox", false, 8)[0].title, "Inbox (3) - Mail");
+        // The prompt never shows, even when its title matches.
+        assert!(!e.search("camera", false, 8).iter().any(|h| h.kind == Kind::Window));
+        // Turned off in Settings: no windows at all.
+        e.show_windows.store(false, std::sync::atomic::Ordering::Relaxed);
+        assert!(!e.search("firefox", false, 8).iter().any(|h| h.kind == Kind::Window));
+        assert!(e.search("w ", false, 8).is_empty());
     }
 
     #[test]

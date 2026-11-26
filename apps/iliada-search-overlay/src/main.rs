@@ -7,7 +7,8 @@
 //! holds the index in memory, for results (a few milliseconds even with a
 //! million files).
 //!
-//! * Super: search apps, files and folders, Settings, agora, answers.
+//! * Super: search apps, files and folders, Settings, agora, answers, and
+//!   open windows (choosing one switches to it; `w ` lists only windows).
 //! * Super+O: ask Homer.
 //! * Super+V: clipboard history (the last 200 copies).
 //! * Space: Quick Look preview of the selected result.
@@ -265,6 +266,11 @@ impl App {
                     Some(iliada_search::Response::Hits { hits, micros }) => {
                         self.hits = hits;
                         self.micros = micros;
+                        if self.hits.is_empty()
+                            && let Some(words) = self.query.trim_start().strip_prefix("w ")
+                        {
+                            self.note = Some(windows_note(words.trim()));
+                        }
                     }
                     _ => {
                         self.hits = Vec::new();
@@ -386,6 +392,20 @@ impl App {
             Action::Copy(text) => {
                 let hide = self.hide();
                 Task::batch([cosmic::iced::clipboard::write(text.clone()), hide])
+            }
+            // Only the search service knows the open windows: it switches.
+            Action::FocusWindow { identifier } => {
+                match self.call(&Request::FocusWindow { identifier: identifier.clone() }) {
+                    Some(iliada_search::Response::Done) => self.hide(),
+                    Some(iliada_search::Response::Error { message }) => {
+                        self.note = Some(fl!("window-focus-failed", error = message));
+                        Task::none()
+                    }
+                    _ => {
+                        self.note = Some(fl!("search-starting"));
+                        Task::none()
+                    }
+                }
             }
             other => {
                 if let Err(e) = actions::perform(other) {
@@ -697,6 +717,21 @@ fn clipboard_off() -> Hit {
     .icon_name("edit-paste-symbolic")
 }
 
+/// Why `w ` shows nothing: windows are turned off, none are open, or none
+/// match.
+fn windows_note(words: &str) -> String {
+    let on = iliada_search::windows::Config::default_path()
+        .map(|p| iliada_search::windows::Config::load(&p).windows)
+        .unwrap_or(true);
+    if !on {
+        fl!("windows-off")
+    } else if words.is_empty() {
+        fl!("windows-none")
+    } else {
+        fl!("windows-no-match")
+    }
+}
+
 fn clipboard_subtitle(hit: &Hit) -> String {
     let mut parts = Vec::new();
     if hit.pinned {
@@ -913,7 +948,8 @@ impl cosmic::Application for App {
                 }
             }
             Message::Activate(i) => {
-                if i.is_none() && !self.moving.is_empty()
+                if i.is_none()
+                    && !self.moving.is_empty()
                     && let Some(dest) = typed_folder(&self.query)
                 {
                     return self.finish_move(dest);
