@@ -1,10 +1,14 @@
 [Desktop Entry]
 Type=Application
 Name=agora
+Name[el]=Αγορά
 GenericName=Get apps
+GenericName[el]=Λήψη εφαρμογών
 Comment=Get apps for Iliada
+Comment[el]=Εφαρμογές για την Ιλιάδα
 Exec=iliada-store-gui
 Icon=org.iliada.Agora
 Categories=System;PackageManager;
 Keywords=apps;install;store;agora;software;marketplace;
+Keywords[el]=εφαρμογές;εγκατάσταση;αγορά;λογισμικό;κατάστημα;
 StartupWMClass=org.iliada.Agora

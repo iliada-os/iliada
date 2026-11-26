@@ -5,7 +5,8 @@
 //! `iliada-settings --standalone` shows them alone (development).
 
 use crate::account::{self, Account};
-use crate::{Progress, ago, open_url, run};
+use crate::i18n::{LANGUAGE_NAMES, ago, describe, language_name, session_has_language};
+use crate::{Progress, fl, open_url, run};
 use cosmic::Element;
 use cosmic::app::Task;
 use cosmic::iced::{Alignment, Length};
@@ -14,7 +15,6 @@ use futures_util::StreamExt;
 use iliada_bundle::policy::{self, AppFacts, Entry, Key, Policy, Rule, Value};
 use iliada_system::client;
 use iliada_system::protocol::{AssistantMode, AssistantSettings, Backup, Event, Provider, Request, Status, model_name};
-use iliada_system::update::describe;
 
 /// Models offered in Settings (the first is the default). Claude models use
 /// an Anthropic key; "vendor/model" ones an OpenRouter key.
@@ -25,7 +25,8 @@ static MODEL_NAMES: std::sync::LazyLock<Vec<String>> =
     std::sync::LazyLock::new(|| MODELS.iter().map(|m| model_name(m)).collect());
 use iliada_assistant::email::{EmailAccount, Security};
 
-const SECURITY_NAMES: [&str; 2] = ["SSL/TLS (port 465)", "STARTTLS (port 587)"];
+static SECURITY_NAMES: std::sync::LazyLock<[String; 2]> =
+    std::sync::LazyLock::new(|| [fl!("security-tls"), fl!("security-starttls")]);
 
 fn security_index(s: Security) -> usize {
     usize::from(s == Security::Starttls)
@@ -61,11 +62,12 @@ pub enum Page {
     Services,
     Privacy,
     Assistant,
+    Language,
     About,
 }
 
 impl Page {
-    pub const ALL: [Page; 8] = [
+    pub const ALL: [Page; 9] = [
         Page::Account,
         Page::Privacy,
         Page::Assistant,
@@ -73,6 +75,7 @@ impl Page {
         Page::Backup,
         Page::Services,
         Page::Tools,
+        Page::Language,
         Page::About,
     ];
 
@@ -87,6 +90,7 @@ impl Page {
             Page::Services => "services",
             Page::Privacy => "privacy",
             Page::Assistant => "homer",
+            Page::Language => "language",
             Page::About => "about",
         }
     }
@@ -95,29 +99,31 @@ impl Page {
         Page::ALL.into_iter().find(|p| p.id() == id)
     }
 
-    pub fn title(self) -> &'static str {
+    pub fn title(self) -> String {
         match self {
-            Page::Account => "Iliada account",
-            Page::Updates => "Updates",
-            Page::Backup => "Backup",
-            Page::Tools => "Command-line tools",
-            Page::Services => "Services",
-            Page::Privacy => "Privacy",
-            Page::Assistant => "Homer",
-            Page::About => "About Iliada",
+            Page::Account => fl!("page-account"),
+            Page::Updates => fl!("page-updates"),
+            Page::Backup => fl!("page-backup"),
+            Page::Tools => fl!("page-tools"),
+            Page::Services => fl!("page-services"),
+            Page::Privacy => fl!("page-privacy"),
+            Page::Assistant => fl!("page-homer"),
+            Page::Language => fl!("page-language"),
+            Page::About => fl!("page-about"),
         }
     }
 
-    pub fn description(self) -> &'static str {
+    pub fn description(self) -> String {
         match self {
-            Page::Account => "Your settings on a new computer",
-            Page::Updates => "Iliada and app updates",
-            Page::Backup => "Back up apps and settings to GitHub",
-            Page::Tools => "Software for the terminal",
-            Page::Services => "SSH, printing, web servers and more",
-            Page::Privacy => "What each app may use",
-            Page::Assistant => "Iliada's assistant",
-            Page::About => "Version and hardware report",
+            Page::Account => fl!("page-account-desc"),
+            Page::Updates => fl!("page-updates-desc"),
+            Page::Backup => fl!("page-backup-desc"),
+            Page::Tools => fl!("page-tools-desc"),
+            Page::Services => fl!("page-services-desc"),
+            Page::Privacy => fl!("page-privacy-desc"),
+            Page::Assistant => fl!("page-homer-desc"),
+            Page::Language => fl!("page-language-desc"),
+            Page::About => fl!("page-about-desc"),
         }
     }
 
@@ -130,6 +136,7 @@ impl Page {
             Page::Services => "network-server-symbolic",
             Page::Privacy => "security-high-symbolic",
             Page::Assistant => "user-available-symbolic",
+            Page::Language => "preferences-desktop-locale-symbolic",
             Page::About => "help-about-symbolic",
         }
     }
@@ -145,7 +152,9 @@ pub enum PrivacyBy {
 }
 
 /// A folder's choices, as Settings says them, and their values in the file.
-const FOLDER_CHOICES: [&str; 4] = ["Read and change", "Read only", "Not allowed", "Ask next time"];
+static FOLDER_CHOICES: std::sync::LazyLock<[String; 4]> = std::sync::LazyLock::new(|| {
+    [fl!("folder-read-write"), fl!("folder-read-only"), fl!("folder-not-allowed"), fl!("folder-ask-next")]
+});
 const FOLDER_VALUES: [Value; 4] = [Value::ReadWrite, Value::ReadOnly, Value::Deny, Value::Ask];
 
 /// One capability's control: a dropdown for folders, a switch otherwise.
@@ -153,7 +162,7 @@ fn permission_control<'a>(app: &str, e: &Entry, title: String) -> Element<'a, Me
     let mut item = settings::item::builder(title);
     let mut said = Vec::new();
     if e.setting == Value::Ask {
-        said.push("Asks the next time it opens".to_owned());
+        said.push(fl!("asks-next-time"));
     }
     if let Some(s) = &e.scope {
         said.push(s.clone());
@@ -264,6 +273,10 @@ pub enum Message {
     KeepHistory(bool),
     ClearHistory,
     ClearHistoryConfirmed,
+    /// Log out (to see a new language).
+    LogOut,
+    /// COSMIC Settings' keyboard page (layouts, shortcuts).
+    OpenKeyboard,
     Confirmed,
     Cancel,
     Dismiss,
@@ -317,33 +330,31 @@ fn load_backups() -> Task<Message> {
 fn success(request: &Request, result: &serde_json::Value) -> Option<String> {
     let changed = result.get("changed").and_then(|c| c.as_bool()).unwrap_or(true);
     Some(match request {
-        Request::AddTools { packages } if changed => format!("Installed {}.", packages.join(", ")),
-        Request::RemoveTools { packages } if changed => format!("Removed {}.", packages.join(", ")),
-        Request::SetService { .. } | Request::Apply if changed => "Settings applied.".into(),
-        Request::UpdateApps => "Apps are up to date.".into(),
+        Request::AddTools { packages } if changed => fl!("installed-tools-done", names = packages.join(", ")),
+        Request::RemoveTools { packages } if changed => fl!("removed-tools-done", names = packages.join(", ")),
+        Request::SetService { .. } | Request::Apply if changed => fl!("settings-applied"),
+        Request::UpdateApps => fl!("apps-up-to-date"),
         Request::UpdateSystem => match result["updated"].as_bool() {
-            Some(true) => format!(
-                "Iliada {} is installed. Restart the computer to finish.",
-                describe(result["version"].as_str().unwrap_or(""))
-            ),
-            _ => "Iliada is up to date.".into(),
+            Some(true) => {
+                fl!("iliada-installed-restart", version = describe(result["version"].as_str().unwrap_or("")))
+            }
+            _ => fl!("iliada-up-to-date"),
         },
         Request::SetTestingUpdates { on } if changed => match (on, result["newer"].as_bool()) {
-            (true, Some(true)) => "This computer now gets test updates. One is ready: choose Update now.".into(),
-            (true, _) => "This computer now gets test updates.".into(),
-            (false, _) => "This computer now gets only releases. It keeps the test update it has until the next \
-                           release."
-                .into(),
+            (true, Some(true)) => fl!("testing-on-ready"),
+            (true, _) => fl!("testing-on"),
+            (false, _) => fl!("testing-off"),
         },
         Request::CheckSystemUpdate => match result["newer"].as_bool() {
-            Some(true) => format!("Iliada {} is available.", describe(result["latest"].as_str().unwrap_or(""))),
-            _ => "Iliada is up to date.".into(),
+            Some(true) => fl!("iliada-available", version = describe(result["latest"].as_str().unwrap_or(""))),
+            _ => fl!("iliada-up-to-date"),
         },
-        Request::BackupSignIn => format!("Signed in as {}.", result["account"].as_str().unwrap_or("")),
-        Request::BackupEnable { .. } | Request::BackupNow => "Backed up.".into(),
-        Request::Restore { .. } => "Restored. Your apps are being installed in the background.".into(),
-        Request::BackupSignOut => "Signed out. Backups are off.".into(),
-        Request::SetAssistant { .. } if changed => "Saved.".into(),
+        Request::BackupSignIn => fl!("signed-in-done", account = result["account"].as_str().unwrap_or("")),
+        Request::BackupEnable { .. } | Request::BackupNow => fl!("backed-up"),
+        Request::Restore { .. } => fl!("restored-installing"),
+        Request::BackupSignOut => fl!("signed-out-backups-off"),
+        Request::SetAssistant { .. } if changed => fl!("saved"),
+        Request::SetLanguage { locale } if changed => fl!("language-changed", language = language_name(locale)),
         _ => return None,
     })
 }
@@ -371,10 +382,7 @@ impl Panel {
     fn banner(&self) -> Option<Element<'_, Message>> {
         let spacing = cosmic::theme::spacing();
         if let Some(job) = &self.job {
-            let what = match job.request.activity() {
-                "" => "Working",
-                w => w,
-            };
+            let what = crate::i18n::activity(job.request.activity());
             let mut col = widget::column::with_capacity(2).push(widget::text::heading(format!("{what}…")));
             if !job.line.is_empty() {
                 col = col.push(widget::text::caption(job.line.as_str()));
@@ -406,44 +414,39 @@ impl Panel {
         let u = &s.system_update;
         let newer = u.latest.as_ref().filter(|l| iliada_system::update::newer(l, &s.version));
         let state = match (newer, u.last_check, &u.last_error) {
-            (Some(l), _, _) => format!("Iliada {} is available.", describe(l)),
-            (None, _, Some(e)) => format!("Could not check for updates: {e}"),
-            (None, Some(t), None) => format!("Up to date (checked {}).", ago(t)),
-            (None, None, None) => "Iliada looks for updates every day.".into(),
+            (Some(l), _, _) => fl!("iliada-available", version = describe(l)),
+            (None, _, Some(e)) => fl!("update-check-failed", error = e.as_str()),
+            (None, Some(t), None) => fl!("up-to-date-checked", ago = ago(t)),
+            (None, None, None) => fl!("updates-daily"),
         };
         let action = match newer {
-            Some(_) => widget::button::suggested("Update now")
+            Some(_) => widget::button::suggested(fl!("update-now"))
                 .on_press_maybe(ok.then_some(Message::Run(Request::UpdateSystem))),
-            None => widget::button::standard("Check now")
+            None => widget::button::standard(fl!("check-now"))
                 .on_press_maybe(ok.then_some(Message::Run(Request::CheckSystemUpdate))),
         };
         let system = settings::section()
-            .title("Iliada")
-            .add(settings::item::builder(format!("Iliada {}", describe(&s.version))).description(state).control(action))
+            .title(fl!("iliada"))
             .add(
-                settings::item::builder("Test updates")
-                    .description(
-                        "Get Iliada's newest work before it is released. Fixes arrive sooner, and so do new \
-                         problems.",
-                    )
-                    .toggler_maybe(
-                        u.testing,
-                        ok.then_some(|on| {
-                            if on {
-                                Message::Ask(Confirm::TestingUpdates)
-                            } else {
-                                Message::Run(Request::SetTestingUpdates { on: false })
-                            }
-                        }),
-                    ),
-            );
-        let apps = settings::section().title("Apps").add(
-            settings::item::builder("App updates")
-                .description("Apps from agora update automatically, every few hours.")
-                .control(
-                    widget::button::standard("Update apps now")
-                        .on_press_maybe(ok.then_some(Message::Run(Request::UpdateApps))),
-                ),
+                settings::item::builder(fl!("iliada-version", version = describe(&s.version)))
+                    .description(state)
+                    .control(action),
+            )
+            .add(settings::item::builder(fl!("test-updates")).description(fl!("test-updates-desc")).toggler_maybe(
+                u.testing,
+                ok.then_some(|on| {
+                    if on {
+                        Message::Ask(Confirm::TestingUpdates)
+                    } else {
+                        Message::Run(Request::SetTestingUpdates { on: false })
+                    }
+                }),
+            ));
+        let apps = settings::section().title(fl!("apps")).add(
+            settings::item::builder(fl!("app-updates")).description(fl!("app-updates-desc")).control(
+                widget::button::standard(fl!("update-apps-now"))
+                    .on_press_maybe(ok.then_some(Message::Run(Request::UpdateApps))),
+            ),
         );
         settings::view_column(vec![system.into(), apps.into()]).into()
     }
@@ -451,20 +454,13 @@ impl Panel {
     fn backup(&self, s: &Status) -> Element<'_, Message> {
         let ok = self.can_change();
         let b = &s.backup;
-        let intro = "Your apps and settings, kept in a private repository on your GitHub account. \
-                     On a new computer, restore them in a few clicks.";
+        let intro = fl!("backup-intro");
         let mut items: Vec<Element<_>> = Vec::new();
         if !b.available {
             items.push(
                 settings::section()
-                    .title("Backup")
-                    .add(info(
-                        "Backup is not available",
-                        Some(
-                            "This system has no GitHub app configured for backups (iliada.system.githubClientId)."
-                                .into(),
-                        ),
-                    ))
+                    .title(fl!("page-backup"))
+                    .add(info(fl!("backup-unavailable"), Some(fl!("backup-unavailable-desc"))))
                     .into(),
             );
             return settings::view_column(items).into();
@@ -472,10 +468,10 @@ impl Panel {
         if let Some((code, url)) = &self.sign_in {
             let spacing = cosmic::theme::spacing();
             let col = widget::column::with_capacity(4)
-                .push(widget::text::body("Open GitHub and enter this code:"))
+                .push(widget::text::body(fl!("github-enter-code")))
                 .push(widget::text::title1(code.as_str()))
-                .push(widget::button::suggested("Open GitHub").on_press(Message::OpenSignIn))
-                .push(widget::text::caption(format!("{url} · Waiting for you to approve it…")))
+                .push(widget::button::suggested(fl!("open-github")).on_press(Message::OpenSignIn))
+                .push(widget::text::caption(fl!("github-waiting", url = url.as_str())))
                 .spacing(spacing.space_s)
                 .align_x(Alignment::Center);
             items.push(card(col.width(Length::Fill).into()));
@@ -485,10 +481,10 @@ impl Panel {
             (None, _) => {
                 items.push(
                     settings::section()
-                        .title("Backup")
+                        .title(fl!("page-backup"))
                         .add(
-                            settings::item::builder("Back up to GitHub").description(intro).control(
-                                widget::button::suggested("Sign in with GitHub")
+                            settings::item::builder(fl!("back-up-to-github")).description(intro).control(
+                                widget::button::suggested(fl!("sign-in-github"))
                                     .on_press_maybe(ok.then_some(Message::Run(Request::BackupSignIn))),
                             ),
                         )
@@ -501,7 +497,7 @@ impl Panel {
                     .on_input(Message::BackupName)
                     .on_submit(|_| Message::Run(Request::BackupEnable { name: String::new() }))
                     .width(Length::Fixed(220.0));
-                let start = widget::button::suggested("Back up").on_press_maybe(
+                let start = widget::button::suggested(fl!("back-up")).on_press_maybe(
                     (ok && name_ok).then(|| Message::Run(Request::BackupEnable { name: self.backup_name.clone() })),
                 );
                 let row = widget::row::with_capacity(3)
@@ -512,12 +508,12 @@ impl Panel {
                     .align_y(Alignment::Center);
                 items.push(
                     settings::section()
-                        .title("Backup")
-                        .add(info("Name this backup", Some(intro.into())))
+                        .title(fl!("page-backup"))
+                        .add(info(fl!("name-this-backup"), Some(intro)))
                         .add(settings::item_row(vec![row.into()]))
                         .add(
-                            settings::item::builder(format!("Signed in as {account}")).control(
-                                widget::button::standard("Sign out")
+                            settings::item::builder(fl!("signed-in-as", account = account.as_str())).control(
+                                widget::button::standard(fl!("sign-out"))
                                     .on_press_maybe(ok.then_some(Message::Ask(Confirm::SignOut))),
                             ),
                         )
@@ -527,24 +523,24 @@ impl Panel {
             }
             (Some(account), Some(repo)) => {
                 let last = match (b.last_backup, &b.last_error) {
-                    (_, Some(e)) => format!("The last backup failed: {e}"),
-                    (Some(t), None) => format!("Last backup: {}.", ago(t)),
-                    (None, None) => "Not backed up yet.".into(),
+                    (_, Some(e)) => fl!("last-backup-failed", error = e.as_str()),
+                    (Some(t), None) => fl!("last-backup", ago = ago(t)),
+                    (None, None) => fl!("not-backed-up"),
                 };
                 items.push(
                     settings::section()
-                        .title("Backup")
+                        .title(fl!("page-backup"))
                         .add(
-                            settings::item::builder(format!("Backing up to github.com/{repo}"))
-                                .description(format!("{last} Iliada backs up after every change, and every hour."))
+                            settings::item::builder(fl!("backing-up-to", repo = repo.as_str()))
+                                .description(fl!("backup-schedule", last = last))
                                 .control(
-                                    widget::button::standard("Back up now")
+                                    widget::button::standard(fl!("back-up-now"))
                                         .on_press_maybe(ok.then_some(Message::Run(Request::BackupNow))),
                                 ),
                         )
                         .add(
-                            settings::item::builder(format!("Signed in as {account}")).control(
-                                widget::button::standard("Sign out")
+                            settings::item::builder(fl!("signed-in-as", account = account.as_str())).control(
+                                widget::button::standard(fl!("sign-out"))
                                     .on_press_maybe(ok.then_some(Message::Ask(Confirm::SignOut))),
                             ),
                         )
@@ -557,31 +553,31 @@ impl Panel {
     }
 
     fn restore_list(&self, ok: bool) -> Element<'_, Message> {
-        let mut section = settings::section().title("Restore");
+        let mut section = settings::section().title(fl!("restore"));
         match &self.backups {
             None => {
                 section = section.add(
-                    settings::item::builder("Restore from a backup")
-                        .description("Bring back the apps and settings of another computer.")
-                        .control(widget::button::standard("Show backups").on_press(Message::LoadBackups)),
+                    settings::item::builder(fl!("restore-from-backup"))
+                        .description(fl!("restore-from-backup-desc"))
+                        .control(widget::button::standard(fl!("show-backups")).on_press(Message::LoadBackups)),
                 )
             }
             Some(Err(e)) => {
                 section = section.add(
-                    settings::item::builder("Could not list your backups")
+                    settings::item::builder(fl!("backups-list-failed"))
                         .description(e.as_str())
-                        .control(widget::button::standard("Retry").on_press(Message::LoadBackups)),
+                        .control(widget::button::standard(fl!("retry")).on_press(Message::LoadBackups)),
                 )
             }
-            Some(Ok(list)) if list.is_empty() => section = section.add(info("No backups yet", None)),
+            Some(Ok(list)) if list.is_empty() => section = section.add(info(fl!("no-backups"), None)),
             Some(Ok(list)) => {
                 for b in list {
                     let updated = b.updated.split('T').next().unwrap_or("").to_owned();
                     section = section.add(
                         settings::item::builder(b.name.clone())
-                            .description(format!("github.com/{} · last backup {updated}", b.repo))
+                            .description(fl!("backup-item", repo = b.repo.as_str(), date = updated))
                             .control(
-                                widget::button::standard("Restore")
+                                widget::button::standard(fl!("restore"))
                                     .on_press_maybe(ok.then(|| Message::Ask(Confirm::Restore(b.repo.clone())))),
                             ),
                     );
@@ -593,45 +589,47 @@ impl Panel {
 
     fn tools(&self, s: &Status) -> Element<'_, Message> {
         let ok = self.can_change();
-        let mut installed = settings::section().title("Installed tools");
+        let mut installed = settings::section().title(fl!("installed-tools"));
         if s.tools.is_empty() {
-            installed = installed.add(info("No tools installed", None));
+            installed = installed.add(info(fl!("no-tools"), None));
         }
         for t in &s.tools {
             installed = installed.add(
                 settings::item::builder(t.clone()).control(
-                    widget::button::standard("Remove")
+                    widget::button::standard(fl!("remove"))
                         .on_press_maybe(ok.then(|| Message::Run(Request::RemoveTools { packages: vec![t.clone()] }))),
                 ),
             );
         }
         let valid = iliada_system::settings::valid_tool_name(self.tool_input.trim());
-        let input = widget::text_input("Package name, e.g. ripgrep", &self.tool_input)
+        let input = widget::text_input(fl!("tool-placeholder"), &self.tool_input)
             .on_input(Message::ToolInput)
             .on_submit(|_| Message::AddTool)
             .width(Length::Fill);
         let add = widget::row::with_capacity(2)
             .push(input)
-            .push(widget::button::suggested("Install").on_press_maybe((ok && valid).then_some(Message::AddTool)))
+            .push(widget::button::suggested(fl!("install")).on_press_maybe((ok && valid).then_some(Message::AddTool)))
             .spacing(cosmic::theme::spacing().space_xs)
             .align_y(Alignment::Center);
         let add = settings::section()
-            .title("Add a tool")
-            .add(info(
-                "Command-line tools",
-                Some("Programs for the Terminal, like vim or git, installed for everyone on this computer. Apps with windows come from agora.".into()),
-            ))
+            .title(fl!("add-a-tool"))
+            .add(info(fl!("page-tools"), Some(fl!("tools-desc"))))
             .add(settings::item_row(vec![add.into()]));
         settings::view_column(vec![installed.into(), add.into()]).into()
     }
 
     fn services(&self, s: &Status) -> Element<'_, Message> {
         let ok = self.can_change();
-        let mut section = settings::section().title("Services");
+        let mut section = settings::section().title(fl!("page-services"));
         for svc in &s.services {
             let name = svc.name.clone();
             let toggle = ok.then_some(move |on| Message::Run(Request::SetService { name: name.clone(), on }));
-            section = section.add(settings::item::builder(svc.description.clone()).toggler_maybe(svc.on, toggle));
+            section = section.add(
+                settings::item::builder(
+                    crate::i18n::lookup(&format!("service-{}", svc.name)).unwrap_or_else(|| svc.description.clone()),
+                )
+                .toggler_maybe(svc.on, toggle),
+            );
             // Installed: whether it starts by itself at boot (developers
             // sometimes want a database only while they work).
             if svc.on {
@@ -639,11 +637,11 @@ impl Panel {
                 let boot = ok.then_some(move |boot| Message::Run(Request::SetServiceBoot { name: name.clone(), boot }));
                 let unit = iliada_system::settings::unit_of_service(&svc.name).unwrap_or(&svc.name);
                 section = section.add(
-                    settings::item::builder("    Start automatically")
+                    settings::item::builder(format!("    {}", fl!("start-automatically")))
                         .description(if svc.boot {
-                            "Starts every time the computer starts.".to_owned()
+                            fl!("starts-at-boot")
                         } else {
-                            format!("Installed, but starts only when asked (systemctl start {unit}).")
+                            fl!("starts-when-asked", unit = unit)
                         })
                         .toggler_maybe(svc.boot, boot),
                 );
@@ -664,16 +662,8 @@ impl Panel {
     }
 
     fn privacy(&self) -> Element<'_, Message> {
-        let mut items: Vec<Element<_>> = vec![info(
-            "What apps may use",
-            Some(
-                "Every app runs in its own sandbox and sees only its own files. Apps ask the first time \
-                 they need a folder, the camera or the microphone. Changes apply the next time the app opens. \
-                 All of this is in your permissions file too, where you, Homer and other tools can read it."
-                    .into(),
-            ),
-        )];
-        let by = |label: &'static str, v: PrivacyBy| {
+        let mut items: Vec<Element<_>> = vec![info(fl!("privacy-intro-title"), Some(fl!("privacy-intro")))];
+        let by = |label: String, v: PrivacyBy| {
             if self.privacy_by == v {
                 widget::button::suggested(label).on_press(Message::PrivacyBy(v))
             } else {
@@ -681,41 +671,39 @@ impl Panel {
             }
         };
         let bar = widget::row::with_capacity(4)
-            .push(by("By app", PrivacyBy::App))
-            .push(by("By permission", PrivacyBy::Capability))
+            .push(by(fl!("privacy-by-app"), PrivacyBy::App))
+            .push(by(fl!("privacy-by-permission"), PrivacyBy::Capability))
             .push(widget::space::horizontal())
-            .push(widget::button::standard("Open the file").on_press(Message::OpenPermissionsFile))
+            .push(widget::button::standard(fl!("open-the-file")).on_press(Message::OpenPermissionsFile))
             .spacing(cosmic::theme::spacing().space_xs)
             .align_y(Alignment::Center);
         items.push(settings::item_row(vec![bar.into()]).into());
 
         let problems = self.policy.problems();
         if !problems.is_empty() {
-            let mut section = settings::section().title("Your permissions file has a mistake");
+            let mut section = settings::section().title(fl!("permissions-file-mistake"));
             for p in problems.iter().take(5) {
                 section = section.add(info(p.message.clone(), Some(p.to_string())));
             }
             if !self.policy.readable() {
-                section = section.add(
-                    settings::item::builder("Until it is fixed, apps get none of what you decide here").control(
-                        widget::button::destructive("Reset").on_press(Message::Ask(Confirm::ResetPermissions)),
-                    ),
-                );
+                section = section.add(settings::item::builder(fl!("until-fixed-none")).control(
+                    widget::button::destructive(fl!("reset")).on_press(Message::Ask(Confirm::ResetPermissions)),
+                ));
             }
             items.push(section.into());
         }
 
         let sandboxed: Vec<&AppFacts> = self.programs.iter().filter(|a| a.source.sandboxed()).collect();
         if sandboxed.is_empty() {
-            items.push(info("No apps are installed yet", None));
+            items.push(info(fl!("no-apps"), None));
         }
         match self.privacy_by {
             PrivacyBy::App => {
                 for app in &sandboxed {
                     let r = self.policy.report(app);
                     let mut section = settings::section().title(app.name.clone());
-                    section = section.add(info("Can touch", Some(r.summary.join(", "))));
-                    section = section.add(info("Worst case", Some(r.worst_case.clone())));
+                    section = section.add(info(fl!("can-touch"), Some(r.summary.join(", "))));
+                    section = section.add(info(fl!("worst-case"), Some(r.worst_case.clone())));
                     for key in Key::ALL {
                         let e = r.get(key);
                         if e.changeable {
@@ -726,15 +714,17 @@ impl Panel {
                         Key::ALL.into_iter().filter(|k| !r.get(*k).enforced).map(|k| k.phrase()).collect();
                     if !loose.is_empty() {
                         section = section.add(info(
-                            "Not restricted yet",
-                            Some(format!("Iliada cannot limit these yet: {}.", loose.join(", "))),
+                            fl!("not-restricted-yet"),
+                            Some(fl!("not-restricted-yet-list", list = loose.join(", "))),
                         ));
                     }
                     let id = app.id.clone();
                     section = section.add(
-                        settings::item::builder("Extra isolation")
-                            .description("Run it in its own virtual machine: stronger isolation, slower start and graphics, no camera yet.")
-                            .toggler(self.extra_isolation.contains(&app.id), move |on| Message::ExtraIsolation(id.clone(), on)),
+                        settings::item::builder(fl!("extra-isolation"))
+                            .description(fl!("extra-isolation-desc"))
+                            .toggler(self.extra_isolation.contains(&app.id), move |on| {
+                                Message::ExtraIsolation(id.clone(), on)
+                            }),
                     );
                     items.push(section.into());
                 }
@@ -759,12 +749,12 @@ impl Panel {
                         }
                         Rule::NotRestrictedYet { why } => {
                             items.push(info(
-                                format!("{}: not restricted yet", key.label()),
-                                Some(format!("Every app: {why}.")),
+                                fl!("cap-not-restricted-yet", name = key.label()),
+                                Some(fl!("every-app-why", why = why)),
                             ));
                         }
                         Rule::Never { why } => {
-                            items.push(info(format!("{}: never", key.label()), Some(format!("No app: {why}."))));
+                            items.push(info(fl!("cap-never", name = key.label()), Some(fl!("no-app-why", why = why))));
                         }
                     }
                 }
@@ -772,13 +762,7 @@ impl Panel {
         }
         let open: Vec<&str> = self.programs.iter().filter(|a| !a.source.sandboxed()).map(|a| a.name.as_str()).collect();
         if !open.is_empty() {
-            items.push(info(
-                "Not sandboxed",
-                Some(format!(
-                    "Built into Iliada or installed as command-line tools, these can do whatever you can: {}.",
-                    open.join(", ")
-                )),
-            ));
+            items.push(info(fl!("not-sandboxed"), Some(fl!("not-sandboxed-list", list = open.join(", ")))));
         }
         settings::view_column(items).into()
     }
@@ -790,14 +774,12 @@ impl Panel {
             let a = a.clone();
             ok.then_some(move |enabled| Message::AssistantSet(AssistantSettings { enabled, ..a.clone() }))
         };
-        let main = settings::section().title("Homer").add(
-            settings::item::builder("Use Homer")
-                .description("Homer, Iliada's assistant, does things for you when you ask in plain words. It uses Claude (Anthropic) or a model on OpenRouter, with your own API key.")
-                .toggler_maybe(a.enabled, on),
+        let main = settings::section().title(fl!("homer")).add(
+            settings::item::builder(fl!("use-homer")).description(fl!("use-homer-desc")).toggler_maybe(a.enabled, on),
         );
         let mut items: Vec<Element<_>> = vec![main.into()];
         if a.enabled {
-            let mode_item = |mode: AssistantMode, title: &'static str, desc: &'static str| {
+            let mode_item = |mode: AssistantMode, title: String, desc: String| {
                 let next = AssistantSettings { mode, ..a.clone() };
                 settings::item::builder(title).description(desc).control(widget::radio(
                     widget::text::body(""),
@@ -807,18 +789,9 @@ impl Panel {
                 ))
             };
             let mut modes = settings::section()
-                .title("What it may do")
-                .add(mode_item(
-                    AssistantMode::Ask,
-                    "Ask me first",
-                    "It shows every action and does it only if you allow it.",
-                ))
-                .add(mode_item(
-                    AssistantMode::Auto,
-                    "Act on its own",
-                    "It installs, removes and changes things without asking. Important things done in your name, \
-                     like sending a message, still wait for your yes unless you allow them below.",
-                ));
+                .title(fl!("what-it-may-do"))
+                .add(mode_item(AssistantMode::Ask, fl!("ask-me-first"), fl!("ask-me-first-desc")))
+                .add(mode_item(AssistantMode::Auto, fl!("act-on-its-own"), fl!("act-on-its-own-desc")));
             if a.mode == AssistantMode::Auto {
                 for (kind, what) in iliada_assistant::tools::KINDS {
                     let allowed = a.on_its_own.iter().any(|k| k == kind);
@@ -834,52 +807,48 @@ impl Panel {
                         })
                     };
                     modes = modes.add(
-                        settings::item::builder(format!("{what} without asking"))
-                            .description(if allowed {
-                                "Homer sends them on his own. Every one is listed in Homer's Activity."
-                            } else {
-                                "Homer shows you each one first and waits for your yes."
-                            })
-                            .toggler_maybe(allowed, set),
+                        settings::item::builder(fl!(
+                            "kind-without-asking",
+                            what = crate::i18n::lookup(&format!("kind-{kind}")).unwrap_or_else(|| (*what).to_owned())
+                        ))
+                        .description(if allowed { fl!("kind-allowed") } else { fl!("kind-asks") })
+                        .toggler_maybe(allowed, set),
                     );
                 }
             }
             if a.mode == AssistantMode::Auto && !a.recommended_for_auto() {
-                modes = modes.add(info(
-                    format!("{} may make more mistakes on its own", model_name(&a.model)),
-                    Some("Opus, Fable and Sonnet are the most careful. Every action is recorded either way.".into()),
-                ));
+                modes = modes
+                    .add(info(fl!("model-more-mistakes", model = model_name(&a.model)), Some(fl!("model-careful"))));
             }
             let full = {
                 let a = a.clone();
                 ok.then_some(move |full_access| Message::AssistantSet(AssistantSettings { full_access, ..a.clone() }))
             };
             modes = modes.add(
-                settings::item::builder("Full access")
-                    .description("It may also run commands as you: read and change your files, change desktop settings, anything you can do without an administrator's password.")
+                settings::item::builder(fl!("full-access"))
+                    .description(fl!("full-access-desc"))
                     .toggler_maybe(a.full_access, full),
             );
             items.push(modes.into());
             let selected = MODELS.iter().position(|m| *m == a.model);
             let model_a = a.clone();
-            let model = settings::section().title("Model").add(
-                settings::item::builder("Model")
-                    .description("Opus is the default: careful and reliable. DeepSeek V4 Flash (through OpenRouter) costs a fraction of a cent per request.")
-                    .control(widget::dropdown(&MODEL_NAMES[..], selected, move |i| {
+            let model = settings::section().title(fl!("model")).add(
+                settings::item::builder(fl!("model")).description(fl!("model-desc")).control(widget::dropdown(
+                    &MODEL_NAMES[..],
+                    selected,
+                    move |i| {
                         Message::AssistantSet(AssistantSettings { model: MODELS[i].to_owned(), ..model_a.clone() })
-                    })),
+                    },
+                )),
             );
             items.push(model.into());
             items.push(
                 settings::section()
-                    .title("Voice")
+                    .title(fl!("voice"))
                     .add(
-                        settings::item::builder("Homer's voice")
-                            .description(
-                                "How he talks: plainly, with a light Homeric touch now and then (\"Sing, O Muse…\"). \
-                                 It is a text file you can change; delete it to go back to this.",
-                            )
-                            .control(widget::button::standard("Edit").on_press(Message::EditVoice)),
+                        settings::item::builder(fl!("homers-voice"))
+                            .description(fl!("homers-voice-desc"))
+                            .control(widget::button::standard(fl!("edit")).on_press(Message::EditVoice)),
                     )
                     .into(),
             );
@@ -893,30 +862,26 @@ impl Panel {
     /// Whether Homer keeps conversations, and deleting the ones he has.
     fn history_section(&self) -> Element<'_, Message> {
         let space = cosmic::theme::spacing();
-        let mut section = settings::section().title("History").add(
-            settings::item::builder("Keep conversations")
+        let mut section = settings::section().title(fl!("history")).add(
+            settings::item::builder(fl!("keep-conversations"))
                 .description(if self.keep_history {
-                    "Homer keeps your chats on this computer, so you can go back to them: Terminal ones by \
-                     folder. Quick tasks like \"Switch to dark mode\" are kept for a day. Only you can read them."
+                    fl!("keep-conversations-on")
                 } else {
-                    "Nothing new is kept: each conversation is gone when you close it."
+                    fl!("keep-conversations-off")
                 })
                 .toggler(self.keep_history, Message::KeepHistory),
         );
         let clear: Element<_> = if self.confirm_clear_history {
             widget::row::with_capacity(2)
-                .push(widget::button::standard("Cancel").on_press(Message::Cancel))
-                .push(widget::button::destructive("Delete All").on_press(Message::ClearHistoryConfirmed))
+                .push(widget::button::standard(fl!("cancel")).on_press(Message::Cancel))
+                .push(widget::button::destructive(fl!("delete-all")).on_press(Message::ClearHistoryConfirmed))
                 .spacing(space.space_xs)
                 .into()
         } else {
-            widget::button::standard("Clear History…").on_press(Message::ClearHistory).into()
+            widget::button::standard(fl!("clear-history-ellipsis")).on_press(Message::ClearHistory).into()
         };
-        section = section.add(
-            settings::item::builder("Clear history")
-                .description("Deletes every conversation Homer kept. What he did stays in Activity.")
-                .control(clear),
-        );
+        section = section
+            .add(settings::item::builder(fl!("clear-history")).description(fl!("clear-history-desc")).control(clear));
         section.into()
     }
 
@@ -931,39 +896,42 @@ impl Panel {
             Provider::OpenRouter => ("sk-or-", "openrouter.ai/keys"),
         };
         let saved = iliada_assistant::api::load_key(provider);
-        let mut section = settings::section().title("API key");
+        let mut section = settings::section().title(fl!("api-key"));
         match (&saved, self.replacing_key) {
             (Some(k), false) => {
                 let status = match &self.key_check {
-                    Some(KeyCheck::Checking) => "Checking the key…".to_owned(),
+                    Some(KeyCheck::Checking) => fl!("checking-key"),
                     Some(KeyCheck::Works(s)) => s.clone(),
-                    Some(KeyCheck::Failed(e)) => format!("This key does not work: {e}."),
-                    None => "Only you can read it; it is never backed up.".to_owned(),
+                    Some(KeyCheck::Failed(e)) => fl!("key-does-not-work", error = e.as_str()),
+                    None => fl!("key-private"),
                 };
                 let buttons = widget::row::with_capacity(2)
-                    .push(widget::button::standard("Replace").on_press(Message::ReplaceKey))
-                    .push(widget::button::destructive("Remove").on_press(Message::RemoveKey))
+                    .push(widget::button::standard(fl!("replace")).on_press(Message::ReplaceKey))
+                    .push(widget::button::destructive(fl!("remove")).on_press(Message::RemoveKey))
                     .spacing(space.space_xs);
                 section = section.add(
-                    settings::item::builder(format!("{name} key saved ({})", iliada_assistant::api::masked(k)))
-                        .description(status)
-                        .control(buttons),
+                    settings::item::builder(fl!(
+                        "key-saved",
+                        provider = name,
+                        masked = iliada_assistant::api::masked(k)
+                    ))
+                    .description(status)
+                    .control(buttons),
                 );
             }
             _ => {
                 let typed = self.key_input.trim();
                 let hint = if typed.is_empty() {
-                    format!("Create one at {site}, then paste it here. Only you can read it; it is never backed up.")
+                    fl!("key-create-at", site = site)
                 } else if !typed.starts_with(prefix) {
                     match iliada_assistant::api::provider_of_key(typed) {
-                        Some(other) => format!(
-                            "That is an {} key, but the model above needs an {name} key ({prefix}…). Choose another model, or paste an {name} key.",
-                            other.name()
-                        ),
-                        None => format!("{name} keys start with {prefix}"),
+                        Some(other) => {
+                            fl!("key-wrong-provider", other = other.name(), provider = name, prefix = prefix)
+                        }
+                        None => fl!("key-starts-with", provider = name, prefix = prefix),
                     }
                 } else {
-                    "Looks right. Press Add key.".to_owned()
+                    fl!("key-looks-right")
                 };
                 let valid = typed.starts_with(prefix) && typed.len() > prefix.len() + 8;
                 let mut row = widget::row::with_capacity(3)
@@ -973,16 +941,16 @@ impl Panel {
                             .on_submit(move |_| if valid { Message::SaveKey } else { Message::Refresh })
                             .width(Length::Fill),
                     )
-                    .push(widget::button::suggested("Add key").on_press_maybe(valid.then_some(Message::SaveKey)));
+                    .push(widget::button::suggested(fl!("add-key")).on_press_maybe(valid.then_some(Message::SaveKey)));
                 if saved.is_some() {
-                    row = row.push(widget::button::standard("Cancel").on_press(Message::CancelReplaceKey));
+                    row = row.push(widget::button::standard(fl!("cancel")).on_press(Message::CancelReplaceKey));
                 }
                 section = section
                     .add(info(
                         if saved.is_some() {
-                            format!("Replace your {name} key")
+                            fl!("replace-key", provider = name)
                         } else {
-                            format!("Add your {name} API key")
+                            fl!("add-api-key", provider = name)
                         },
                         Some(hint),
                     ))
@@ -991,7 +959,7 @@ impl Panel {
         }
         let spent = iliada_assistant::total_spent();
         if spent > 0.0 {
-            section = section.add(info(format!("Spent so far: ${spent:.4}"), None));
+            section = section.add(info(fl!("spent-so-far", amount = format!("${spent:.4}")), None));
         }
         section.into()
     }
@@ -1013,16 +981,14 @@ impl Panel {
     fn email_section(&self) -> Element<'_, Message> {
         let space = cosmic::theme::spacing().space_xs;
         let saved = iliada_assistant::email::load();
-        let mut section = settings::section().title("Email").add(info(
+        let mut section = settings::section().title(fl!("email")).add(info(
             match &saved {
-                Some(a) => format!("Homer sends email as {}", a.address),
-                None => "Let Homer send email for you".to_owned(),
+                Some(a) => fl!("homer-sends-as", address = a.address.as_str()),
+                None => fl!("let-homer-email"),
             },
-            Some(
-                "From your own email account. You see every email before it is sent. For Gmail, iCloud and Yahoo use an app password from your account's security settings.".to_owned(),
-            ),
+            Some(fl!("email-desc")),
         ));
-        let field = |label: &'static str, input: Element<'static, Message>| -> Element<'static, Message> {
+        let field = |label: String, input: Element<'static, Message>| -> Element<'static, Message> {
             widget::row::with_capacity(2)
                 .push(widget::text::body(label).width(Length::Fixed(140.0)))
                 .push(input)
@@ -1032,21 +998,21 @@ impl Panel {
         };
         section = section
             .add(settings::item_row(vec![field(
-                "Email address",
+                fl!("email-address"),
                 widget::text_input("you@example.com", self.email.address.clone())
                     .on_input(Message::EmailAddress)
                     .width(Length::Fill)
                     .into(),
             )]))
             .add(settings::item_row(vec![field(
-                "Outgoing server",
+                fl!("outgoing-server"),
                 widget::text_input("smtp.example.com", self.email.server.clone())
                     .on_input(Message::EmailServer)
                     .width(Length::Fill)
                     .into(),
             )]))
             .add(settings::item_row(vec![field(
-                "Connection",
+                fl!("connection"),
                 widget::dropdown(
                     &SECURITY_NAMES[..],
                     Some(security_index(self.email.security)),
@@ -1055,9 +1021,9 @@ impl Panel {
                 .into(),
             )]))
             .add(settings::item_row(vec![field(
-                "Password",
+                fl!("password"),
                 widget::secure_input(
-                    if iliada_assistant::email::has_password() { "Saved (type to change)" } else { "Password" },
+                    if iliada_assistant::email::has_password() { fl!("password-saved") } else { fl!("password") },
                     self.email.password.clone(),
                     None,
                     true,
@@ -1069,39 +1035,69 @@ impl Panel {
             )]));
         let mut buttons = widget::row::with_capacity(2).spacing(space);
         if saved.is_some() {
-            buttons = buttons.push(widget::button::standard("Remove").on_press(Message::RemoveEmail));
+            buttons = buttons.push(widget::button::standard(fl!("remove")).on_press(Message::RemoveEmail));
         }
-        buttons = buttons.push(widget::button::suggested("Save").on_press(Message::SaveEmail));
+        buttons = buttons.push(widget::button::suggested(fl!("save")).on_press(Message::SaveEmail));
         section.add(settings::item_row(vec![widget::space::horizontal().into(), buttons.into()])).into()
     }
 
     fn about(&self, s: &Status) -> Element<'_, Message> {
         let section = settings::section()
-            .title("This computer")
-            .add(settings::item("Name", widget::text::body(s.hostname.clone())))
-            .add(settings::item("Iliada", widget::text::body(s.version.clone())))
-            .add(settings::item("Configuration", widget::text::body("/etc/iliada (every change is recorded)")));
+            .title(fl!("this-computer"))
+            .add(settings::item(fl!("name"), widget::text::body(s.hostname.clone())))
+            .add(settings::item(fl!("iliada"), widget::text::body(s.version.clone())))
+            .add(settings::item(fl!("configuration"), widget::text::body(fl!("configuration-value"))));
         let (description, control): (String, Element<'_, Message>) = match &self.report {
-            None => (
-                "If something doesn't work (screen, Wi-Fi, sound, sleep), save a report on this \
-                 computer's hardware and share it with whoever helps."
-                    .into(),
-                widget::button::standard("Save report").on_press(Message::SaveReport).into(),
-            ),
-            Some(None) => ("Looking at this computer…".into(), widget::button::standard("Save report").into()),
+            None => {
+                (fl!("report-desc"), widget::button::standard(fl!("save-report")).on_press(Message::SaveReport).into())
+            }
+            Some(None) => (fl!("looking-at-computer"), widget::button::standard(fl!("save-report")).into()),
             Some(Some(Ok(path))) => (
-                format!("Saved as {path}. It is plain text: read it before you share it."),
-                widget::button::standard("Open").on_press(Message::OpenReport).into(),
+                fl!("report-saved", path = path.as_str()),
+                widget::button::standard(fl!("open")).on_press(Message::OpenReport).into(),
             ),
             Some(Some(Err(e))) => (
-                format!("The report could not be saved: {e}"),
-                widget::button::standard("Try again").on_press(Message::SaveReport).into(),
+                fl!("report-failed", error = e.as_str()),
+                widget::button::standard(fl!("try-again")).on_press(Message::SaveReport).into(),
             ),
         };
         let help = settings::section()
-            .title("Help")
-            .add(settings::item::builder("Hardware report").description(description).control(control));
+            .title(fl!("help"))
+            .add(settings::item::builder(fl!("hardware-report")).description(description).control(control));
         settings::view_column(vec![section.into(), help.into()]).into()
+    }
+}
+
+impl Panel {
+    /// The computer's language: English or Ελληνικά, each in its own words.
+    fn language(&self, s: &Status) -> Element<'_, Message> {
+        let ok = self.can_change();
+        let languages = &iliada_system::settings::LANGUAGES;
+        let selected = languages.iter().position(|(l, _)| *l == s.language);
+        let choose: Element<'_, Message> = if ok {
+            widget::dropdown(&LANGUAGE_NAMES[..], selected, move |i| {
+                Message::Run(Request::SetLanguage { locale: languages[i].0.to_owned() })
+            })
+            .into()
+        } else {
+            widget::text::body(language_name(&s.language)).into()
+        };
+        let mut section = settings::section()
+            .title(fl!("page-language"))
+            .add(settings::item::builder(fl!("language-title")).description(fl!("language-desc")).control(choose));
+        // Chosen, but this session started in another one.
+        if !session_has_language(&s.language) {
+            section = section.add(
+                settings::item::builder(fl!("language-pending", language = language_name(&s.language)))
+                    .control(widget::button::standard(fl!("log-out")).on_press(Message::LogOut)),
+            );
+        }
+        let keyboard = settings::section().title(fl!("keyboard-layouts")).add(
+            settings::item::builder(fl!("keyboard-layouts"))
+                .description(fl!("keyboard-layouts-desc"))
+                .control(widget::button::standard(fl!("keyboard-settings")).on_press(Message::OpenKeyboard)),
+        );
+        settings::view_column(vec![section.into(), keyboard.into()]).into()
     }
 }
 
@@ -1185,60 +1181,39 @@ impl Panel {
     pub fn dialog(&self) -> Option<Element<'_, Message>> {
         let (title, body, action) = match self.confirm.as_ref()? {
             Confirm::Restore(repo) => (
-                "Restore this backup?",
-                format!(
-                    "The apps and settings from github.com/{repo} replace this computer's. \
-                     From now on, this computer backs up there."
-                ),
-                widget::button::destructive("Restore"),
+                fl!("restore-backup-q"),
+                fl!("restore-backup-body", repo = repo.as_str()),
+                widget::button::destructive(fl!("restore")),
             ),
-            Confirm::ResetPermissions => (
-                "Reset your permissions file?",
-                "Your answers are forgotten and every app asks again the next time it opens. \
-                 The file with the mistake is kept next to it, as permissions.toml.broken."
-                    .to_owned(),
-                widget::button::destructive("Reset"),
-            ),
+            Confirm::ResetPermissions => {
+                (fl!("reset-permissions-q"), fl!("reset-permissions-body"), widget::button::destructive(fl!("reset")))
+            }
             Confirm::RemoveKey(p) => (
-                "Remove the API key?",
-                format!("Homer stops working until you add a {} key again.", p.name()),
-                widget::button::destructive("Remove"),
+                fl!("remove-key-q"),
+                fl!("remove-key-body", provider = p.name()),
+                widget::button::destructive(fl!("remove")),
             ),
             Confirm::AccountRestore(from) => (
-                "Restore your settings?",
-                format!(
-                    "Your desktop settings, Privacy answers and conversations with Homer from {from} \
-                     replace this computer's."
-                ),
-                widget::button::destructive("Restore"),
+                fl!("restore-settings-q"),
+                fl!("restore-settings-body", from = from.as_str()),
+                widget::button::destructive(fl!("restore")),
             ),
-            Confirm::AccountSignOut => (
-                "Sign out of your Iliada account?",
-                "Backups stop on this computer, and it forgets your account key: signing in again needs \
-                 your recovery key. Your account and its backup are kept."
-                    .to_owned(),
-                widget::button::destructive("Sign out"),
-            ),
-            Confirm::TestingUpdates => (
-                "Get test updates?",
-                "This computer gets Iliada's newest work as soon as it is ready, before it is released to \
-                 everyone: fixes arrive sooner, and so do new problems. If an update causes trouble, restart \
-                 and choose the previous version in the start-up menu."
-                    .to_owned(),
-                widget::button::suggested("Get test updates"),
-            ),
-            Confirm::SignOut => (
-                "Sign out of GitHub?",
-                "Backups stop. Your backups on GitHub are kept.".to_owned(),
-                widget::button::destructive("Sign out"),
-            ),
+            Confirm::AccountSignOut => {
+                (fl!("account-sign-out-q"), fl!("account-sign-out-body"), widget::button::destructive(fl!("sign-out")))
+            }
+            Confirm::TestingUpdates => {
+                (fl!("testing-q"), fl!("testing-body"), widget::button::suggested(fl!("get-test-updates")))
+            }
+            Confirm::SignOut => {
+                (fl!("github-sign-out-q"), fl!("github-sign-out-body"), widget::button::destructive(fl!("sign-out")))
+            }
         };
         Some(
             widget::dialog()
                 .title(title)
                 .body(body)
                 .primary_action(action.on_press(Message::Confirmed))
-                .secondary_action(widget::button::standard("Cancel").on_press(Message::Cancel))
+                .secondary_action(widget::button::standard(fl!("cancel")).on_press(Message::Cancel))
                 .into(),
         )
     }
@@ -1364,35 +1339,32 @@ impl Panel {
                 };
                 let password = (!self.email.password.is_empty()).then_some(self.email.password.as_str());
                 if password.is_none() && !iliada_assistant::email::has_password() {
-                    self.error = Some("Type the email account's password first.".into());
+                    self.error = Some(fl!("email-password-first"));
                 } else {
                     match iliada_assistant::email::save(&account, password) {
-                        Err(e) => self.error = Some(format!("Could not save the email account: {e:#}")),
+                        Err(e) => self.error = Some(fl!("email-save-failed", error = format!("{e:#}"))),
                         Ok(()) => {
                             self.email.password.clear();
-                            self.notice = Some(format!(
-                                "Homer can now send email as {}. Only you can read the password.",
-                                account.address
-                            ));
+                            self.notice = Some(fl!("email-saved", address = account.address.as_str()));
                         }
                     }
                 }
             }
             Message::RemoveEmail => match iliada_assistant::email::remove() {
-                Err(e) => self.error = Some(format!("Could not remove the email account: {e:#}")),
+                Err(e) => self.error = Some(fl!("email-remove-failed", error = format!("{e:#}"))),
                 Ok(()) => {
                     self.email = EmailForm::default();
-                    self.notice = Some("The email account was removed.".into());
+                    self.notice = Some(fl!("email-removed"));
                 }
             },
             Message::SaveKey => {
                 let k = self.key_input.trim().to_owned();
                 match iliada_assistant::api::save_key(&k) {
-                    Err(e) => self.error = Some(format!("Could not save the key: {e:#}")),
+                    Err(e) => self.error = Some(fl!("key-save-failed", error = format!("{e:#}"))),
                     Ok(p) => {
                         self.key_input.clear();
                         self.replacing_key = false;
-                        self.notice = Some(format!("{} key added.", p.name()));
+                        self.notice = Some(fl!("key-added", provider = p.name()));
                         let model = self.status().map(|s| s.assistant.model.clone()).unwrap_or_default();
                         return self.check_key(&model);
                     }
@@ -1422,7 +1394,7 @@ impl Panel {
                     self.extra_isolation.push(app);
                 }
                 if let Err(e) = save_extra_isolation(&self.extra_isolation) {
-                    self.error = Some(format!("Could not save: {e}"));
+                    self.error = Some(fl!("save-failed", error = e.to_string()));
                 }
                 // The tier changes what an app can be given; say so in the file.
                 self.load_permissions();
@@ -1431,7 +1403,7 @@ impl Panel {
                 if let Some(f) = self.programs.iter().find(|a| a.id == app).cloned() {
                     let programs = self.programs.clone();
                     if let Err(e) = self.policy.edit(&programs, |p| p.set(&f, key, value)) {
-                        self.error = Some(format!("Could not save: {e}"));
+                        self.error = Some(fl!("save-failed", error = e.to_string()));
                     }
                 }
             }
@@ -1465,8 +1437,8 @@ impl Panel {
                             p.reset(None);
                             Ok(())
                         }) {
-                            Ok(()) => self.notice = Some("Every app asks again the next time it opens.".into()),
-                            Err(e) => self.error = Some(format!("Could not reset: {e}")),
+                            Ok(()) => self.notice = Some(fl!("permissions-reset")),
+                            Err(e) => self.error = Some(fl!("permissions-reset-failed", error = e.to_string())),
                         }
                         Task::none()
                     }
@@ -1474,10 +1446,10 @@ impl Panel {
                     Some(Confirm::AccountSignOut) => self.account.update(account::Msg::SignOut).map(account_action),
                     Some(Confirm::RemoveKey(p)) => {
                         match iliada_assistant::api::remove_key(p) {
-                            Err(e) => self.error = Some(format!("Could not remove the key: {e:#}")),
+                            Err(e) => self.error = Some(fl!("key-remove-failed", error = format!("{e:#}"))),
                             Ok(()) => {
                                 self.key_check = None;
-                                self.notice = Some(format!("{} key removed.", p.name()));
+                                self.notice = Some(fl!("key-removed", provider = p.name()));
                             }
                         }
                         Task::none()
@@ -1512,16 +1484,22 @@ impl Panel {
             }
             Message::KeepHistory(on) => match iliada_assistant::history::set_history_enabled(on) {
                 Ok(()) => self.keep_history = on,
-                Err(e) => self.error = Some(format!("Couldn't change Homer's history setting: {e:#}")),
+                Err(e) => self.error = Some(fl!("history-setting-failed", error = format!("{e:#}"))),
             },
             Message::ClearHistory => self.confirm_clear_history = true,
             Message::ClearHistoryConfirmed => {
                 self.confirm_clear_history = false;
                 match iliada_assistant::history::ConversationStore::open().clear() {
-                    Ok(0) => self.notice = Some("There were no conversations to delete.".into()),
-                    Ok(n) => self.notice = Some(format!("Deleted {n} conversations.")),
-                    Err(e) => self.error = Some(format!("Couldn't clear Homer's history: {e:#}")),
+                    Ok(0) => self.notice = Some(fl!("history-already-empty")),
+                    Ok(n) => self.notice = Some(fl!("history-cleared", n = n)),
+                    Err(e) => self.error = Some(fl!("history-clear-failed", error = format!("{e:#}"))),
                 }
+            }
+            Message::LogOut => {
+                let _ = std::process::Command::new("cosmic-osd").arg("log-out").spawn();
+            }
+            Message::OpenKeyboard => {
+                let _ = std::process::Command::new("cosmic-settings").arg("keyboard").spawn();
             }
             Message::EditVoice => match iliada_assistant::voice_path() {
                 Some(path) => {
@@ -1531,13 +1509,13 @@ impl Panel {
                             .map_or(Ok(()), std::fs::create_dir_all)
                             .and_then(|()| std::fs::write(&path, iliada_assistant::DEFAULT_VOICE));
                         if let Err(e) = made {
-                            self.error = Some(format!("Couldn't make Homer's voice file: {e}"));
+                            self.error = Some(fl!("voice-file-failed", error = e.to_string()));
                             return Task::none();
                         }
                     }
                     let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
                 }
-                None => self.error = Some("There is no home folder to keep Homer's voice in.".into()),
+                None => self.error = Some(fl!("no-home-for-voice")),
             },
         }
         Task::none()
@@ -1559,11 +1537,11 @@ impl Panel {
     pub fn content(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
         match &self.status {
-            None => widget::text::body("Loading…").into(),
+            None => widget::text::body(fl!("loading")).into(),
             Some(Err(e)) => widget::column::with_capacity(3)
-                .push(widget::text::title4("Settings are not available"))
+                .push(widget::text::title4(fl!("settings-unavailable")))
                 .push(widget::text::body(e.as_str()))
-                .push(widget::button::standard("Try again").on_press(Message::Refresh))
+                .push(widget::button::standard(fl!("try-again")).on_press(Message::Refresh))
                 .spacing(spacing.space_s)
                 .into(),
             Some(Ok(s)) => {
@@ -1574,9 +1552,10 @@ impl Panel {
                 if matches!(self.page(), Page::Account) {
                     // Each person's own: no administrator needed.
                 } else if !s.admin {
-                    col = col.push(card(widget::text::body("Only an administrator can change these settings.").into()));
+                    col = col.push(card(widget::text::body(fl!("admin-only")).into()));
                 } else if let (Some(busy), None) = (&s.busy, &self.job) {
-                    col = col.push(card(widget::text::body(format!("Iliada is busy: {busy}…")).into()));
+                    col = col
+                        .push(card(widget::text::body(fl!("iliada-busy", what = crate::i18n::activity(busy))).into()));
                 }
                 col = col.push(match self.page() {
                     Page::Account => self.account.view().map(Message::Account),
@@ -1586,6 +1565,7 @@ impl Panel {
                     Page::Services => self.services(s),
                     Page::Privacy => self.privacy(),
                     Page::Assistant => self.assistant(s),
+                    Page::Language => self.language(s),
                     Page::About => self.about(s),
                 });
                 col.max_width(760).into()

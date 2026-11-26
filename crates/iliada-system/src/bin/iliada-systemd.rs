@@ -56,6 +56,9 @@ enum Cmd {
         hostname: String,
         #[arg(long, default_value = "UTC")]
         timezone: String,
+        /// The computer's language: a locale Iliada comes in (`el_GR.UTF-8`).
+        #[arg(long)]
+        language: Option<String>,
         #[arg(long)]
         auto_login: bool,
         /// Keep developer SSH access (the utm-dev image).
@@ -156,6 +159,7 @@ impl Service {
                 ..self.updates.lock().expect("updates lock").clone()
             },
             assistant: settings::assistant(&doc),
+            language: settings::language(&doc),
         }
     }
 
@@ -231,6 +235,13 @@ impl Service {
                     return Ok(json!({ "changed": false }));
                 }
                 self.change_settings(&doc, &format!("{} {name}", if on { "Install" } else { "Remove" }), &log).await
+            }
+            Request::SetLanguage { locale } => {
+                let mut doc = self.read_settings()?;
+                if !settings::set_language(&mut doc, &locale)? {
+                    return Ok(json!({ "changed": false }));
+                }
+                self.change_settings(&doc, &format!("Language: {locale}"), &log).await
             }
             Request::SetServiceBoot { name, boot } => {
                 let mut doc = self.read_settings()?;
@@ -675,6 +686,7 @@ async fn main() -> Result<()> {
             full_name,
             hostname,
             timezone,
+            language,
             auto_login,
             dev_access,
             if_missing,
@@ -693,6 +705,7 @@ async fn main() -> Result<()> {
                 user,
                 hostname,
                 timezone,
+                language,
                 auto_login,
                 dev_access,
                 system: init::host_system(),

@@ -19,3 +19,6 @@ libcosmic.workspace = true
 iliada-system.workspace = true
 iliada-settings = { path = "../iliada-settings" }
 futures-util.workspace = true
+i18n-embed.workspace = true
+i18n-embed-fl.workspace = true
+rust-embed.workspace = true

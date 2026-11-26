@@ -57,9 +57,9 @@ impl cosmic::Application for App {
             }
         }
         let mut app = App { core, nav, panel: Panel::new(page) };
-        app.set_header_title("Settings".into());
+        app.set_header_title(iliada_settings::fl!("settings"));
         let title = match app.core.main_window_id() {
-            Some(id) => app.set_window_title("Settings".into(), id),
+            Some(id) => app.set_window_title(iliada_settings::fl!("settings"), id),
             None => Task::none(),
         };
         let enter = app.panel.enter(page);

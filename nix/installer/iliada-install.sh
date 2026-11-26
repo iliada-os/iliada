@@ -12,7 +12,7 @@
 
 SOURCE="${ILIADA_SOURCE:-/etc/iliada/source}"
 TEMPLATE="$SOURCE/templates/default"
-FREE=0 DISK="" USERNAME="iliada" FULLNAME="" HOSTNAME_="iliada" TIMEZONE="UTC" PASSWORD="" YES=0
+FREE=0 DISK="" USERNAME="iliada" FULLNAME="" HOSTNAME_="iliada" TIMEZONE="UTC" LANGUAGE_="en_US.UTF-8" PASSWORD="" YES=0
 
 die() { echo "iliada-install: $*" >&2; exit 1; }
 step() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
@@ -20,7 +20,7 @@ usage() {
   cat <<USAGE
 usage: iliada-install --disk DEVICE [--user NAME] [--fullname "Full Name"]
                       [--hostname NAME] [--timezone Area/City] [--password PW] [--yes]
-                      [--free-space]
+                      [--free-space] [--language en_US.UTF-8|el_GR.UTF-8]
 
 Erases DEVICE entirely and installs Iliada on it; with --free-space, installs
 Iliada into the largest free space on DEVICE and keeps everything else.
@@ -35,6 +35,7 @@ while [ $# -gt 0 ]; do
     --fullname) FULLNAME="$2"; shift 2 ;;
     --hostname) HOSTNAME_="$2"; shift 2 ;;
     --timezone) TIMEZONE="$2"; shift 2 ;;
+    --language) LANGUAGE_="$2"; shift 2 ;;
     --password) PASSWORD="$2"; shift 2 ;;
     --yes) YES=1; shift ;;
     --free-space) FREE=1; shift ;;
@@ -51,6 +52,10 @@ done
 [[ "$USERNAME" =~ ^[a-z_][a-z0-9_-]{0,30}$ ]] || die "invalid user name: $USERNAME"
 [[ "$HOSTNAME_" =~ ^[a-zA-Z0-9-]{1,63}$ ]] || die "invalid host name: $HOSTNAME_"
 [ -e "/etc/zoneinfo/$TIMEZONE" ] || [ -e "$(dirname "$(readlink -f /etc/localtime)")/$TIMEZONE" ] || echo "warning: unknown time zone $TIMEZONE"
+case "$LANGUAGE_" in
+  en_US.UTF-8 | el_GR.UTF-8) ;;
+  *) die "Iliada does not come in $LANGUAGE_ (en_US.UTF-8 or el_GR.UTF-8)" ;;
+esac
 FULLNAME="${FULLNAME:-$USERNAME}"
 
 if [ "$YES" -ne 1 ]; then
@@ -110,7 +115,8 @@ nixos-generate-config --root /mnt
 # /etc/iliada: the configuration (a git repository: what gets backed up and
 # synced), and the copy of Iliada it builds from.
 iliada-systemd init --root /mnt --source "$SOURCE" --profile hardware \
-  --user "$USERNAME" --full-name "$FULLNAME" --hostname "$HOSTNAME_" --timezone "$TIMEZONE"
+  --user "$USERNAME" --full-name "$FULLNAME" --hostname "$HOSTNAME_" --timezone "$TIMEZONE" \
+  --language "$LANGUAGE_"
 
 step "Installing Iliada (this downloads and builds the system)"
 nixos-install --root /mnt --flake git+file:///mnt/etc/iliada#iliada --no-root-passwd --no-channel-copy

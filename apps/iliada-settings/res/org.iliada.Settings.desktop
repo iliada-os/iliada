@@ -1,12 +1,16 @@
 [Desktop Entry]
 Type=Application
 Name=Settings
+Name[el]=Ρυθμίσεις
 GenericName=System Settings
+GenericName[el]=Ρυθμίσεις συστήματος
 Comment=Wi-Fi, displays, sound, updates, backup, privacy and more
+Comment[el]=Wi-Fi, οθόνες, ήχος, ενημερώσεις, αντίγραφα ασφαλείας, απόρρητο και άλλα
 Exec=iliada-settings
 Icon=org.iliada.Settings
 Categories=Settings;System;
 Keywords=settings;preferences;wifi;network;bluetooth;display;sound;appearance;wallpaper;keyboard;mouse;power;update;backup;github;restore;privacy;homer;tools;ssh;printing;
+Keywords[el]=ρυθμίσεις;προτιμήσεις;δίκτυο;οθόνη;ήχος;εμφάνιση;ταπετσαρία;πληκτρολόγιο;ποντίκι;ενέργεια;ενημέρωση;αντίγραφο ασφαλείας;επαναφορά;απόρρητο;όμηρος;εργαλεία;γλώσσα;ελληνικά;
 StartupNotify=true
 # Opens the one Settings app (COSMIC Settings, with Iliada's pages) at
 # Updates; the launcher and dock show that app's own entry, "Settings".

@@ -3067,8 +3067,11 @@ name = "iliada-installer"
 version = "0.2.7"
 dependencies = [
  "futures-util",
+ "i18n-embed",
+ "i18n-embed-fl",
  "iliada-system",
  "libcosmic",
+ "rust-embed",
  "serde_json",
  "tokio",
 ]
@@ -3108,7 +3111,10 @@ version = "0.2.7"
 dependencies = [
  "anyhow",
  "async-trait",
+ "fluent-syntax",
  "futures-util",
+ "i18n-embed",
+ "i18n-embed-fl",
  "iliada-account",
  "iliada-assistant",
  "iliada-bundle",
@@ -3118,6 +3124,7 @@ dependencies = [
  "iliada-types",
  "libcosmic",
  "reqwest",
+ "rust-embed",
  "serde_json",
  "tokio",
 ]
@@ -3150,6 +3157,8 @@ name = "iliada-store-gui"
 version = "0.2.7"
 dependencies = [
  "futures-util",
+ "i18n-embed",
+ "i18n-embed-fl",
  "iliada-bundle",
  "iliada-catalog",
  "iliada-settings",
@@ -3157,6 +3166,7 @@ dependencies = [
  "iliada-system",
  "libcosmic",
  "reqwest",
+ "rust-embed",
  "tokio",
 ]
 

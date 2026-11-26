@@ -1,6 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Install Iliada
+Name[el]=Εγκατάσταση της Ιλιάδας
 Exec=iliada-installer
 Icon=org.iliada.Installer
 NoDisplay=true

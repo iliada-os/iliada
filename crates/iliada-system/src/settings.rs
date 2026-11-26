@@ -183,6 +183,43 @@ pub fn set_testing_updates(doc: &mut DocumentMut, on: bool) -> bool {
     true
 }
 
+/// The languages Iliada comes in: the locale and the language's own name.
+pub const LANGUAGES: &[(&str, &str)] = &[("en_US.UTF-8", "English"), ("el_GR.UTF-8", "Ελληνικά")];
+
+/// The locale a new computer starts in.
+pub const DEFAULT_LANGUAGE: &str = "en_US.UTF-8";
+
+/// `[language] locale = "el_GR.UTF-8"`: the language of the whole computer
+/// (menus, apps, the login screen). The Iliada NixOS modules make it the
+/// system locale (`i18n.defaultLocale`); it shows after logging in again.
+pub fn language(doc: &DocumentMut) -> String {
+    doc.get("language")
+        .and_then(|t| t.get("locale"))
+        .and_then(Item::as_str)
+        .filter(|l| valid_language(l))
+        .unwrap_or(DEFAULT_LANGUAGE)
+        .to_owned()
+}
+
+/// One of [`LANGUAGES`] (other locales are not built into the system).
+pub fn valid_language(locale: &str) -> bool {
+    LANGUAGES.iter().any(|(l, _)| *l == locale)
+}
+
+pub fn set_language(doc: &mut DocumentMut, locale: &str) -> Result<bool> {
+    if !valid_language(locale) {
+        bail!("{locale:?} is not a language Iliada comes in");
+    }
+    if language(doc) == locale && doc.get("language").is_some() {
+        return Ok(false);
+    }
+    if !doc.contains_key("language") {
+        doc["language"] = Item::Table(Table::new());
+    }
+    doc["language"]["locale"] = value(locale);
+    Ok(true)
+}
+
 /// How a service is set up: three levels, as on Debian or Fedora.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -251,6 +288,19 @@ pub fn set_service_boot(doc: &mut DocumentMut, name: &str, boot: bool) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn language_is_english_until_changed() {
+        let mut doc: DocumentMut = "[tools]\npackages = []\n".parse().unwrap();
+        assert_eq!(language(&doc), "en_US.UTF-8");
+        assert!(set_language(&mut doc, "el_GR.UTF-8").unwrap());
+        assert_eq!(language(&doc), "el_GR.UTF-8");
+        assert!(!set_language(&mut doc, "el_GR.UTF-8").unwrap());
+        assert!(set_language(&mut doc, "fr_FR.UTF-8").is_err());
+        assert!(doc.to_string().contains("[language]\nlocale = \"el_GR.UTF-8\""));
+        let odd: DocumentMut = "[language]\nlocale = \"xx\"\n".parse().unwrap();
+        assert_eq!(language(&odd), "en_US.UTF-8");
+    }
 
     #[test]
     fn testing_updates_switch() {

@@ -20,6 +20,11 @@ iliada-account = { path = "../crates/iliada-account" }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 tokio = { version = "1", features = ["rt-multi-thread", "fs", "sync", "process"] }
 futures-util = "0.3"
+# Translations (English, Greek), as COSMIC's apps do them.
+i18n-embed = { version = "0.16", features = ["fluent-system", "desktop-requester"] }
+i18n-embed-fl = "0.10"
+rust-embed = "8"
+fluent-syntax = "0.12"
 
 [workspace.dependencies.libcosmic]
 # Named exactly as COSMIC Settings names it (one copy when its pages are

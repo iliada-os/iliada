@@ -24,10 +24,21 @@ index fad2df7..5f557b3 100644
  anyhow = "1.0"
  ashpd = { version = "0.12", default-features = false, features = [
 diff --git a/cosmic-settings/src/app.rs b/cosmic-settings/src/app.rs
-index b77f643..8a19d87 100644
+index b77f643..96235f7 100644
 --- a/cosmic-settings/src/app.rs
 +++ b/cosmic-settings/src/app.rs
-@@ -143,6 +143,9 @@ impl SettingsApp {
+@@ -120,7 +120,9 @@ impl SettingsApp {
+             #[cfg(feature = "page-power")]
+             PageCommands::Power => self.pages.page_id::<power::Page>(),
+             #[cfg(feature = "page-region")]
+-            PageCommands::RegionLanguage => self.pages.page_id::<time::region::Page>(),
++            PageCommands::RegionLanguage => {
++                self.pages.find_page_by_id("iliada-language").map(|(id, _)| id)
++            }
+             #[cfg(feature = "page-sound")]
+             PageCommands::Sound => self.pages.page_id::<sound::Page>(),
+             PageCommands::StartupApps => self.pages.page_id::<applications::startup_apps::Page>(),
+@@ -143,6 +145,9 @@ impl SettingsApp {
              PageCommands::Wireless => self.pages.page_id::<networking::wifi::Page>(),
              #[cfg(feature = "page-workspaces")]
              PageCommands::Workspaces => self.pages.page_id::<desktop::workspaces::Page>(),
@@ -37,7 +48,7 @@ index b77f643..8a19d87 100644
          }
      }
  
-@@ -214,6 +217,8 @@ impl cosmic::Application for SettingsApp {
+@@ -214,6 +219,8 @@ impl cosmic::Application for SettingsApp {
              context_title: None,
          };
  
@@ -46,7 +57,7 @@ index b77f643..8a19d87 100644
          #[cfg(feature = "page-networking")]
          app.insert_page::<networking::Page>();
          #[cfg(feature = "page-bluetooth")]
-@@ -230,8 +235,15 @@ impl cosmic::Application for SettingsApp {
+@@ -230,8 +237,15 @@ impl cosmic::Application for SettingsApp {
          #[cfg(feature = "page-input")]
          app.insert_page::<input::Page>();
          app.insert_page::<applications::Page>();
@@ -62,7 +73,7 @@ index b77f643..8a19d87 100644
  
          let active_id = match flags.sub_command {
              Some(p) => app.subtask_to_page(&p),
-@@ -401,6 +413,10 @@ impl cosmic::Application for SettingsApp {
+@@ -401,6 +415,10 @@ impl cosmic::Application for SettingsApp {
              }
  
              Message::PageMessage(message) => match message {
@@ -74,7 +85,7 @@ index b77f643..8a19d87 100644
  
                  #[cfg(feature = "page-accessibility")]
 diff --git a/cosmic-settings/src/main.rs b/cosmic-settings/src/main.rs
-index faf1a8f..562dabc 100644
+index faf1a8f..b58601c 100644
 --- a/cosmic-settings/src/main.rs
 +++ b/cosmic-settings/src/main.rs
 @@ -160,6 +160,9 @@ pub enum PageCommands {
@@ -82,20 +93,20 @@ index faf1a8f..562dabc 100644
      #[cfg(feature = "page-workspaces")]
      Workspaces,
 +    /// One of Iliada's pages: updates, privacy, homer, backup, account,
-+    /// services, tools, about
++    /// services, tools, about, language
 +    Iliada { page: String },
  }
  
  impl FromStr for PageCommands {
 diff --git a/cosmic-settings/src/pages/iliada.rs b/cosmic-settings/src/pages/iliada.rs
 new file mode 100644
-index 0000000..cc859ba
+index 0000000..ba9d956
 --- /dev/null
 +++ b/cosmic-settings/src/pages/iliada.rs
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,99 @@
 +// Iliada's settings pages (the Iliada account, privacy, Homer, updates,
-+// backup, services, command-line tools, about) among COSMIC's own, so the
-+// computer has one Settings app. Each page shows Iliada's panel
++// backup, services, command-line tools, about, and the language under Time &
++// Language) among COSMIC's own, so the computer has one Settings app. Each page shows Iliada's panel
 +// (iliada_settings::panel) for that page.
 +
 +use cosmic::Task;
@@ -168,6 +179,7 @@ index 0000000..cc859ba
 +iliada_page!(Services, IliadaPage::Services);
 +iliada_page!(Tools, IliadaPage::Tools);
 +iliada_page!(About, IliadaPage::About);
++iliada_page!(Language, IliadaPage::Language);
 +
 +/// A message for one of Iliada's pages.
 +pub fn update(
@@ -184,6 +196,7 @@ index 0000000..cc859ba
 +        IliadaPage::Services => pages.page_mut::<Services>().map(|p| &mut p.panel),
 +        IliadaPage::Tools => pages.page_mut::<Tools>().map(|p| &mut p.panel),
 +        IliadaPage::About => pages.page_mut::<About>().map(|p| &mut p.panel),
++        IliadaPage::Language => pages.page_mut::<Language>().map(|p| &mut p.panel),
 +    };
 +    match panel {
 +        Some(panel) => wrap_app(page, panel.update(message)),
@@ -213,3 +226,22 @@ index e24524e..8710c84 100644
      #[cfg(feature = "wayland")]
      Panel(desktop::panel::Message),
      #[cfg(feature = "wayland")]
+diff --git a/cosmic-settings/src/pages/time/mod.rs b/cosmic-settings/src/pages/time/mod.rs
+index ad7d106..d1df555 100644
+--- a/cosmic-settings/src/pages/time/mod.rs
++++ b/cosmic-settings/src/pages/time/mod.rs
+@@ -34,10 +34,10 @@ impl page::AutoBind<crate::pages::Message> for Page {
+             page = page.sub_page::<date::Page>();
+         }
+ 
+-        #[cfg(feature = "page-region")]
+-        {
+-            page = page.sub_page::<region::Page>();
+-        }
++        // Iliada: its Language page instead of COSMIC's Region & Language,
++        // which sets the language through systemd-localed (not how NixOS
++        // keeps it) and so does nothing on Iliada.
++        page = page.sub_page::<crate::pages::iliada::Language>();
+ 
+         page
+     }

@@ -8,6 +8,8 @@
 #                               ("manual": installed, started only by hand; false: not installed)
 #   printing = false            CUPS
 #   nginx, postgresql, mariadb, redis, docker   (agora's Services)
+#   [language]
+#   locale = "el_GR.UTF-8"      the computer's language (English when absent)
 { config, lib, pkgs, ... }:
 let
   cfg = config.iliada;
@@ -31,6 +33,9 @@ let
   };
   manualServices = lib.filter manual (lib.attrNames bootUnits);
   noBoot = kind: lib.listToAttrs (lib.concatMap (n: map (u: lib.nameValuePair u { wantedBy = lib.mkForce [ ]; }) bootUnits.${n}.${kind}) manualServices);
+  # One of the languages Iliada comes in (language.nix builds their locales).
+  locale = s.language.locale or null;
+  languages = [ "en_US.UTF-8" "el_GR.UTF-8" ];
   toPkg = name:
     lib.attrByPath (lib.splitString "." name) (throw "iliada settings: there is no package called ${name}") pkgs;
 in
@@ -51,6 +56,9 @@ in
   };
 
   config = {
+    # Above configuration.nix's `i18n.defaultLocale` (written by the
+    # installer): the language chosen in Settings wins.
+    i18n.defaultLocale = lib.mkIf (lib.elem locale languages) (lib.mkOverride 90 locale);
     environment.systemPackages = map toPkg (cfg.tools ++ (s.tools.packages or [ ]));
     services.openssh.enable = lib.mkIf (installed "ssh") true;
     services.printing.enable = lib.mkIf (installed "printing") true;

@@ -47,7 +47,17 @@
   permissions; `--json` is for agents (docs/permissions-schema.md).
   **Homer** can explain what an app could do and propose changes, which
   you confirm.
-
+- **Iliada comes in Greek (Ελληνικά).** Pick it in Settings → Time &
+  Language → Language, in the Setup Assistant's first page, in the
+  installer, or with `iliada language el`; log out and back in and the
+  desktop is in Greek. Iliada's own apps are translated throughout
+  (Ρυθμίσεις, Αγορά, Όμηρος, the Setup Assistant, the installer and the
+  permission questions), and COSMIC's apps use their own Greek
+  translations. Greek fonts with polytonic accents are built in, and the
+  keyboard has English and Greek layouts: Super+Space switches.
+- **Homer greets you with the Iliad's first words**, «Μῆνιν ἄειδε, θεά…»,
+  with "Sing, O goddess…" below in English. When the computer is in
+  Greek he answers in Greek.
 - **Dark mode is the default** for a new person and the live installer
   session: the desktop, GTK apps and the login screen start dark, in
   the bronze-on-navy look. A choice already saved in Appearance is

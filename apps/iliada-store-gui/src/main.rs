@@ -4,6 +4,8 @@
 //! install, update and open apps. Installing is exactly dragging the `.app`
 //! into Applications, after the download is verified against the catalog.
 
+mod i18n;
+
 use std::collections::BTreeMap;
 
 use std::sync::Arc;
@@ -64,7 +66,7 @@ enum Page {
 #[derive(Debug, Clone)]
 enum Status {
     Idle,
-    Working(&'static str),
+    Working(String),
     Failed(String),
 }
 
@@ -119,9 +121,11 @@ impl App {
             Some(h) => widget::icon::icon(h.clone()).size(56).into(),
             None => widget::icon::from_name("application-x-executable").size(56).icon().into(),
         };
-        let mut meta = format!("{:.0} MB", app.local_archive().map_or(0, |a| a.size) as f64 / 1e6);
+        let size = format!("{:.0}", app.local_archive().map_or(0, |a| a.size) as f64 / 1e6);
+        let mut meta = fl!("size-mb", size = size);
         if app.network {
-            meta.push_str("  ·  Uses the internet");
+            meta.push_str("  ·  ");
+            meta.push_str(&fl!("uses-internet"));
         }
         let text = widget::column::with_capacity(5)
             .push(widget::text::title4(app.name.as_str()))
@@ -135,16 +139,16 @@ impl App {
         let action: Element<_> = match self.status.get(&app.id) {
             Some(Status::Working(what)) => widget::row::with_capacity(2)
                 .push(widget::progress_bar::circular::Circular::new().size(20.0))
-                .push(widget::text::body(*what))
+                .push(widget::text::body(what.as_str()))
                 .spacing(spacing.space_xs)
                 .align_y(Alignment::Center)
                 .into(),
             _ => match installed {
                 Some(i) if i.version != app.version => {
-                    widget::button::suggested("Update").on_press(Message::Install(app.id.clone())).into()
+                    widget::button::suggested(fl!("update")).on_press(Message::Install(app.id.clone())).into()
                 }
-                Some(_) => widget::button::standard("Open").on_press(Message::Open(app.id.clone())).into(),
-                None => widget::button::suggested("Get").on_press(Message::Install(app.id.clone())).into(),
+                Some(_) => widget::button::standard(fl!("open")).on_press(Message::Open(app.id.clone())).into(),
+                None => widget::button::suggested(fl!("get")).on_press(Message::Install(app.id.clone())).into(),
             },
         };
         let mut col = widget::column::with_capacity(2).push(
@@ -156,7 +160,7 @@ impl App {
                 .align_y(Alignment::Center),
         );
         if let Some(Status::Failed(e)) = self.status.get(&app.id) {
-            col = col.push(widget::text::caption(format!("Could not install: {e}")));
+            col = col.push(widget::text::caption(fl!("install-failed", error = e.as_str())));
         }
         widget::container(col.spacing(spacing.space_xxs))
             .padding(spacing.space_s)
@@ -185,17 +189,17 @@ impl App {
         let action: Element<_> = match (self.status.get(m.url), installed) {
             (Some(Status::Working(what)), _) => widget::row::with_capacity(2)
                 .push(widget::progress_bar::circular::Circular::new().size(20.0))
-                .push(widget::text::body(*what))
+                .push(widget::text::body(what.as_str()))
                 .spacing(spacing.space_xs)
                 .align_y(Alignment::Center)
                 .into(),
-            (_, Some(id)) => widget::button::standard("Open").on_press(Message::Open(id)).into(),
-            _ => widget::button::suggested("Get").on_press(Message::FromMaker(m.url)).into(),
+            (_, Some(id)) => widget::button::standard(fl!("open")).on_press(Message::Open(id)).into(),
+            _ => widget::button::suggested(fl!("get")).on_press(Message::FromMaker(m.url)).into(),
         };
         let text = widget::column::with_capacity(3)
             .push(widget::text::title4(m.name))
-            .push(widget::text::body("Browse the web"))
-            .push(widget::text::caption("Downloaded from its maker and set up on this computer  ·  Uses the internet"))
+            .push(widget::text::body(fl!("browse-the-web")))
+            .push(widget::text::caption(format!("{}  ·  {}", fl!("from-maker"), fl!("uses-internet"))))
             .spacing(spacing.space_xxxs)
             .width(Length::Fill);
         let mut col = widget::column::with_capacity(2).push(
@@ -207,7 +211,7 @@ impl App {
                 .align_y(Alignment::Center),
         );
         if let Some(Status::Failed(e)) = self.status.get(m.url) {
-            col = col.push(widget::text::caption(format!("Could not install it: {e}")));
+            col = col.push(widget::text::caption(fl!("install-it-failed", error = e.as_str())));
         }
         widget::container(col.spacing(spacing.space_xxs))
             .padding(spacing.space_s)
@@ -228,17 +232,17 @@ impl App {
         let action: Element<_> = match (self.status.get(&d.package), installed) {
             (Some(Status::Working(what)), _) => widget::row::with_capacity(2)
                 .push(widget::progress_bar::circular::Circular::new().size(20.0))
-                .push(widget::text::body(*what))
+                .push(widget::text::body(what.as_str()))
                 .spacing(spacing.space_xs)
                 .align_y(Alignment::Center)
                 .into(),
-            (_, Some(id)) => widget::button::standard("Open").on_press(Message::Open(id)).into(),
-            _ => widget::button::standard("Build").on_press(Message::Build(d.package.clone())).into(),
+            (_, Some(id)) => widget::button::standard(fl!("open")).on_press(Message::Open(id)).into(),
+            _ => widget::button::standard(fl!("build")).on_press(Message::Build(d.package.clone())).into(),
         };
         let text = widget::column::with_capacity(3)
             .push(widget::text::title4(d.name.as_str()))
             .push(widget::text::body(d.summary.as_str()))
-            .push(widget::text::caption(format!("From Debian · built on this computer · package {}", d.package)))
+            .push(widget::text::caption(fl!("from-debian", package = d.package.as_str())))
             .spacing(spacing.space_xxxs)
             .width(Length::Fill);
         let mut col = widget::column::with_capacity(2).push(
@@ -250,7 +254,7 @@ impl App {
                 .align_y(Alignment::Center),
         );
         if let Some(Status::Failed(e)) = self.status.get(&d.package) {
-            col = col.push(widget::text::caption(format!("Could not build it: {e}")));
+            col = col.push(widget::text::caption(fl!("build-failed", error = e.as_str())));
         }
         widget::container(col.spacing(spacing.space_xxs))
             .padding(spacing.space_s)
@@ -295,22 +299,18 @@ impl App {
         let more: Vec<_> =
             translate::search(&self.debian, &needle).into_iter().filter(|d| !in_store(&d.name)).take(20).collect();
         if !more.is_empty() {
-            list = list.push(widget::text::title4("Not in agora yet")).push(widget::text::caption(
-                "Iliada can build these from Debian's packages on this computer. They become ordinary \
-                     sandboxed apps, but a few don't work this way.",
-            ));
+            list = list
+                .push(widget::text::title4(fl!("not-in-agora")))
+                .push(widget::text::caption(fl!("not-in-agora-body")));
             for d in more {
                 list = list.push(self.debian_row(d));
                 found = true;
             }
         }
         if !found {
-            return widget::container(widget::text::body(format!(
-                "Nothing in agora matches \"{}\".",
-                self.search.trim()
-            )))
-            .center(Length::Fill)
-            .into();
+            return widget::container(widget::text::body(fl!("nothing-matches", search = self.search.trim())))
+                .center(Length::Fill)
+                .into();
         }
         widget::scrollable(list).height(Length::Fill).into()
     }
@@ -318,17 +318,11 @@ impl App {
     fn system_page(&self, kind: Kind) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
         let intro = match kind {
-            Kind::Software => {
-                "Command-line software for the Terminal, installed for everyone on this computer. \
-                               Not apps: they have no window and are part of the system."
-            }
-            Kind::Service => {
-                "Programs that run in the background on this computer. \
-                              Not apps: they are part of the system and keep running after you log out."
-            }
+            Kind::Software => fl!("software-intro"),
+            Kind::Service => fl!("services-intro"),
         };
         let s = match &self.system {
-            None => return widget::container(widget::text::body("Loading…")).center(Length::Fill).into(),
+            None => return widget::container(widget::text::body(fl!("loading"))).center(Length::Fill).into(),
             Some(Err(e)) => return widget::container(widget::text::body(e.as_str())).center(Length::Fill).into(),
             Some(Ok(s)) => s,
         };
@@ -336,7 +330,7 @@ impl App {
         let mut list = widget::column::with_capacity(SOFTWARE.len() + 2).spacing(spacing.space_s);
         list = list.push(widget::text::body(intro));
         if !s.admin {
-            list = list.push(widget::text::caption("Only an administrator can install software or change services."));
+            list = list.push(widget::text::caption(fl!("admin-only")));
         }
         for item in SOFTWARE.iter().filter(|i| i.kind == kind).filter(|i| {
             needle.is_empty() || i.name.to_lowercase().contains(&needle) || i.summary.to_lowercase().contains(&needle)
@@ -349,8 +343,8 @@ impl App {
     fn system_row<'a>(&'a self, item: &'a Item, s: &SystemStatus) -> Element<'a, Message> {
         let spacing = cosmic::theme::spacing();
         let (badge, icon) = match item.kind {
-            Kind::Software => ("Software · for the Terminal", "utilities-terminal"),
-            Kind::Service => ("Service · runs in the background", "network-server"),
+            Kind::Software => (fl!("badge-software"), "utilities-terminal"),
+            Kind::Service => (fl!("badge-service"), "network-server"),
         };
         let on = match item.kind {
             Kind::Software => s.tools.iter().any(|t| t == item.id),
@@ -359,16 +353,16 @@ impl App {
         let free = s.admin && s.busy.is_none() && !self.status.values().any(|st| matches!(st, Status::Working(_)));
         let id = item.id.to_owned();
         let (label, request, suggested) = match (item.kind, on) {
-            (Kind::Software, false) => ("Get", Request::AddTools { packages: vec![id.clone()] }, true),
-            (Kind::Software, true) => ("Remove", Request::RemoveTools { packages: vec![id.clone()] }, false),
-            (Kind::Service, false) => ("Turn on", Request::SetService { name: id.clone(), on: true }, true),
-            (Kind::Service, true) => ("Turn off", Request::SetService { name: id.clone(), on: false }, false),
+            (Kind::Software, false) => (fl!("get"), Request::AddTools { packages: vec![id.clone()] }, true),
+            (Kind::Software, true) => (fl!("remove"), Request::RemoveTools { packages: vec![id.clone()] }, false),
+            (Kind::Service, false) => (fl!("turn-on"), Request::SetService { name: id.clone(), on: true }, true),
+            (Kind::Service, true) => (fl!("turn-off"), Request::SetService { name: id.clone(), on: false }, false),
         };
         let msg = free.then(|| Message::Change(id.clone(), request));
         let action: Element<_> = match self.status.get(item.id) {
             Some(Status::Working(what)) => widget::row::with_capacity(2)
                 .push(widget::progress_bar::circular::Circular::new().size(20.0))
-                .push(widget::text::body(*what))
+                .push(widget::text::body(what.as_str()))
                 .spacing(spacing.space_xs)
                 .align_y(Alignment::Center)
                 .into(),
@@ -377,8 +371,8 @@ impl App {
         };
         let text = widget::column::with_capacity(3)
             .push(widget::text::title4(item.name))
-            .push(widget::text::body(item.summary))
-            .push(widget::text::caption(format!("{badge} · {}", item.category)))
+            .push(widget::text::body(i18n::summary(item)))
+            .push(widget::text::caption(format!("{badge} · {}", i18n::category(item.category))))
             .spacing(spacing.space_xxxs)
             .width(Length::Fill);
         let mut col = widget::column::with_capacity(2).push(
@@ -390,7 +384,7 @@ impl App {
                 .align_y(Alignment::Center),
         );
         if let Some(Status::Failed(e)) = self.status.get(item.id) {
-            col = col.push(widget::text::caption(format!("Could not change it: {e}")));
+            col = col.push(widget::text::caption(fl!("change-failed", error = e.as_str())));
         }
         widget::container(col.spacing(spacing.space_xxs))
             .padding(spacing.space_s)
@@ -415,19 +409,26 @@ impl cosmic::Application for App {
 
     fn init(core: Core, _flags: ()) -> (Self, Task<Message>) {
         let mut nav = nav_bar::Model::default();
-        nav.insert().text("Discover").icon(widget::icon::from_name("starred-symbolic")).data(Page::Discover).activate();
+        nav.insert()
+            .text(fl!("discover"))
+            .icon(widget::icon::from_name("starred-symbolic"))
+            .data(Page::Discover)
+            .activate();
         for c in CATEGORIES {
-            nav.insert().text(c).data(Page::Category(c));
+            nav.insert().text(i18n::category(c)).data(Page::Category(c));
         }
         nav.insert()
-            .text("Software")
+            .text(fl!("software"))
             .icon(widget::icon::from_name("utilities-terminal-symbolic"))
             .data(Page::System(Kind::Software));
         nav.insert()
-            .text("Services")
+            .text(fl!("services"))
             .icon(widget::icon::from_name("network-server-symbolic"))
             .data(Page::System(Kind::Service));
-        nav.insert().text("Installed").icon(widget::icon::from_name("folder-download-symbolic")).data(Page::Installed);
+        nav.insert()
+            .text(fl!("installed"))
+            .icon(widget::icon::from_name("folder-download-symbolic"))
+            .data(Page::Installed);
 
         let cfg = StoreConfig::from_env().expect("built-in catalog key");
         let store = Arc::new(Store::new(cfg).expect("store"));
@@ -443,9 +444,9 @@ impl cosmic::Application for App {
             search: String::new(),
             system: None,
         };
-        app.set_header_title("agora".into());
+        app.set_header_title(fl!("agora"));
         let title = match app.core.main_window_id() {
-            Some(id) => app.set_window_title("agora".into(), id),
+            Some(id) => app.set_window_title(fl!("agora"), id),
             None => Task::none(),
         };
         let load = app.load_catalog();
@@ -492,7 +493,7 @@ impl cosmic::Application for App {
             Message::Install(id) => {
                 let Some(Ok(catalog)) = &self.catalog else { return Task::none() };
                 let Some(app) = catalog.apps.iter().find(|a| a.id == id).cloned() else { return Task::none() };
-                let what = if self.installed.contains_key(&id) { "Updating…" } else { "Installing…" };
+                let what = if self.installed.contains_key(&id) { fl!("updating") } else { fl!("installing") };
                 self.status.insert(id.clone(), Status::Working(what));
                 let store = self.store.clone();
                 return cosmic::task::future(async move {
@@ -520,7 +521,7 @@ impl cosmic::Application for App {
                     self.status.insert(url.to_owned(), Status::Failed(format!("{e:#}")));
                     return Task::none();
                 }
-                self.status.insert(url.to_owned(), Status::Working("Downloading and setting up…"));
+                self.status.insert(url.to_owned(), Status::Working(fl!("downloading-setting-up")));
                 return cosmic::task::future(async move {
                     let r = translate::wait_url(url, std::time::Duration::from_secs(30 * 60), &|_| {}).await;
                     Message::Built(url.to_owned(), r.map_err(|e| format!("{e:#}")))
@@ -535,7 +536,7 @@ impl cosmic::Application for App {
                     self.status.insert(package, Status::Failed(format!("{e:#}")));
                     return Task::none();
                 }
-                self.status.insert(package.clone(), Status::Working("Building…"));
+                self.status.insert(package.clone(), Status::Working(fl!("building")));
                 return cosmic::task::future(async move {
                     let r = translate::wait(&package, std::time::Duration::from_secs(30 * 60), &|_| {}).await;
                     Message::Built(package, r.map_err(|e| format!("{e:#}")))
@@ -564,10 +565,10 @@ impl cosmic::Application for App {
             Message::System(s) => self.system = Some(s),
             Message::Change(id, request) => {
                 let what = match &request {
-                    Request::AddTools { .. } => "Installing…",
-                    Request::RemoveTools { .. } => "Removing…",
-                    Request::SetService { on: true, .. } => "Turning on…",
-                    _ => "Turning off…",
+                    Request::AddTools { .. } => fl!("installing"),
+                    Request::RemoveTools { .. } => fl!("removing"),
+                    Request::SetService { on: true, .. } => fl!("turning-on"),
+                    _ => fl!("turning-off"),
                 };
                 self.status.insert(id.clone(), Status::Working(what));
                 return cosmic::task::stream(
@@ -591,7 +592,7 @@ impl cosmic::Application for App {
         let page = self.page();
         let header = widget::row::with_capacity(2)
             .push(
-                widget::text_input::search_input("Search apps and software", &self.search)
+                widget::text_input::search_input(fl!("search"), &self.search)
                     .on_input(Message::Search)
                     .on_clear(Message::Search(String::new()))
                     .width(Length::Fill),
@@ -617,10 +618,10 @@ impl cosmic::Application for App {
                 .into();
         }
         let body: Element<_> = match &self.catalog {
-            None => widget::container(widget::text::body("Loading the catalog…")).center(Length::Fill).into(),
+            None => widget::container(widget::text::body(fl!("loading-catalog"))).center(Length::Fill).into(),
             Some(Err(e)) => widget::container(
                 widget::column::with_capacity(2)
-                    .push(widget::text::title4("agora is not available"))
+                    .push(widget::text::title4(fl!("agora-unavailable")))
                     .push(widget::text::body(e.as_str()))
                     .spacing(spacing.space_s)
                     .align_x(Alignment::Center),
@@ -655,7 +656,7 @@ impl cosmic::Application for App {
                     .filter(|m| needle.is_empty() || m.name.to_lowercase().contains(&needle))
                     .collect();
                 if apps.is_empty() && from_makers.is_empty() {
-                    widget::container(widget::text::body("No apps here yet.")).center(Length::Fill).into()
+                    widget::container(widget::text::body(fl!("no-apps-here"))).center(Length::Fill).into()
                 } else {
                     let mut list = widget::column::with_capacity(apps.len() + 1).spacing(spacing.space_s);
                     for m in from_makers {

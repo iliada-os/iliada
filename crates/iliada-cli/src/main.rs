@@ -23,11 +23,11 @@ mod report;
 
 use std::io::IsTerminal;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use iliada_store::{Store, StoreConfig, translate};
-use iliada_system::client;
 use iliada_system::protocol::{Backup, Event, Request};
+use iliada_system::{client, settings};
 
 const EXAMPLES: &str = "\
 Examples:
@@ -119,6 +119,8 @@ enum Cmd {
         #[command(subcommand)]
         cmd: BackupCmd,
     },
+    /// The computer's language: en (English) or el (Ελληνικά). No name: show it.
+    Language { name: Option<String> },
     /// Ask Homer, the assistant, to do something (no text: a conversation).
     Ask {
         /// Homer mode: Homer working in this folder (Ctrl+O at a shell prompt).
@@ -283,6 +285,18 @@ async fn system(request: Request, verbose: bool) -> Result<serde_json::Value> {
     r
 }
 
+/// `en`, `english`, `el`, `greek`, `ελληνικά` or a locale, as one of the
+/// locales Iliada comes in.
+fn language_locale(name: &str) -> Option<&'static str> {
+    let n = name.trim().to_lowercase();
+    let short = match n.as_str() {
+        "en" | "english" | "αγγλικά" => "en",
+        "el" | "gr" | "greek" | "ελληνικά" | "ελληνικα" => "el",
+        other => other.split(['_', '.', '-']).next().unwrap_or(""),
+    };
+    settings::LANGUAGES.iter().map(|(l, _)| *l).find(|l| l.starts_with(&format!("{short}_")))
+}
+
 fn changed(v: &serde_json::Value) -> bool {
     v.get("changed").and_then(|c| c.as_bool()).unwrap_or(true)
 }
@@ -405,6 +419,22 @@ async fn main() -> Result<()> {
                     (true, false) => ("yes", "no"),
                 };
                 println!("{:<12} {:<10} {:<9} {:<9} {}", s.name, installed, boot, now, s.description);
+            }
+        }
+        Cmd::Language { name: None } => {
+            let s = client::status().await?;
+            let name = settings::LANGUAGES.iter().find(|(l, _)| *l == s.language).map_or("English", |(_, n)| n);
+            println!("{name} ({})", s.language);
+        }
+        Cmd::Language { name: Some(name) } => {
+            let Some(locale) = language_locale(&name) else {
+                bail!("Iliada comes in English (en) and Greek (el), not {name:?}");
+            };
+            let r = system(Request::SetLanguage { locale: locale.to_owned() }, v).await?;
+            if changed(&r) {
+                eprintln!("Done. Log out and back in to see Iliada in the new language.");
+            } else {
+                eprintln!("This computer is already in that language.");
             }
         }
         Cmd::History { count } => {
@@ -1154,6 +1184,15 @@ async fn update_notice() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn language_names() {
+        assert_eq!(language_locale("el"), Some("el_GR.UTF-8"));
+        assert_eq!(language_locale("Ελληνικά"), Some("el_GR.UTF-8"));
+        assert_eq!(language_locale("greek"), Some("el_GR.UTF-8"));
+        assert_eq!(language_locale("en_US.UTF-8"), Some("en_US.UTF-8"));
+        assert_eq!(language_locale("fr"), None);
+    }
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()

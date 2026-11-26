@@ -26,6 +26,9 @@ pub enum Request {
     SetAssistant { settings: AssistantSettings },
     /// Apply /etc/iliada as it is.
     Apply,
+    /// The computer's language (one of `settings::LANGUAGES`, a locale such
+    /// as `el_GR.UTF-8`) and apply. It shows after logging in again.
+    SetLanguage { locale: String },
     /// Install missing Store apps from the app list and update the rest now.
     UpdateApps,
     /// Look for a new Iliada release (the answer is also in [`Status`]).
@@ -74,6 +77,7 @@ impl Request {
             Request::SetService { .. } | Request::SetServiceBoot { .. } => "org.iliada.system.services",
             Request::UpdateSystem | Request::SetTestingUpdates { .. } => "org.iliada.system.update",
             Request::Apply
+            | Request::SetLanguage { .. }
             | Request::Restore { .. }
             | Request::RestoreSettings { .. }
             | Request::BackupEnable { .. }
@@ -91,6 +95,7 @@ impl Request {
             Request::RemoveTools { .. } => "Removing tools",
             Request::SetService { .. } | Request::SetServiceBoot { .. } | Request::Apply => "Applying settings",
             Request::SetAssistant { .. } => "Saving assistant settings",
+            Request::SetLanguage { .. } => "Changing the language",
             Request::UpdateApps => "Updating apps",
             Request::UpdateSystem => "Updating Iliada",
             Request::SetTestingUpdates { .. } => "Changing how Iliada updates",
@@ -138,6 +143,13 @@ pub struct Status {
     pub system_update: UpdateInfo,
     #[serde(default)]
     pub assistant: AssistantSettings,
+    /// The computer's language (a locale, `en_US.UTF-8`).
+    #[serde(default = "default_language")]
+    pub language: String,
+}
+
+fn default_language() -> String {
+    crate::settings::DEFAULT_LANGUAGE.to_owned()
 }
 
 /// `[assistant]` in settings.toml. The API key is per user, never here (this

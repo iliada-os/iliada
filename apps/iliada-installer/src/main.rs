@@ -5,6 +5,8 @@
 //! through the live system's passwordless sudo; the password goes to it on
 //! stdin, never on a command line.
 
+mod i18n;
+
 use std::process::Stdio;
 
 use cosmic::app::{Settings, Task};
@@ -12,6 +14,7 @@ use cosmic::iced::{Alignment, Length, Size};
 use cosmic::widget;
 use cosmic::{ApplicationExt, Core, Element, executor};
 use iliada_system::init::{valid_hostname, valid_timezone, valid_user};
+use iliada_system::settings::LANGUAGES;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 const MIN_DISK: u64 = 20_000_000_000;
@@ -38,9 +41,19 @@ struct Disk {
 
 impl Disk {
     fn label(&self) -> String {
-        let model = if self.model.is_empty() { "Disk".to_owned() } else { self.model.clone() };
-        let kind = if self.removable { " (removable)" } else { "" };
+        let model = if self.model.is_empty() { fl!("disk") } else { self.model.clone() };
+        let kind = if self.removable { format!(" {}", fl!("removable")) } else { String::new() };
         format!("{model}{kind} · {} · {}", gb(self.size), self.path)
+    }
+
+    /// What is on it, for a sentence: its name, and whether it is a system
+    /// ("system") or only files ("other"), which Greek says differently.
+    fn holds_words(&self) -> (String, &'static str) {
+        match self.holds.as_deref() {
+            Some("other files") => (fl!("other-files"), "other"),
+            Some(what) => (what.to_owned(), "system"),
+            None => (fl!("the-other-system"), "system"),
+        }
     }
 
     /// Iliada fits next to what is there.
@@ -161,6 +174,32 @@ const REGIONS: &[&str] = &[
     "Other",
 ];
 
+/// A region's name in the language shown.
+fn region_name(region: &str) -> String {
+    i18n::lookup_or(&format!("region-{}", region.to_lowercase()), region)
+}
+
+/// What `iliada-install` is doing (its "==> " lines), in the language shown.
+fn stage_name(stage: &str) -> String {
+    let key = [
+        ("Making room on", "stage-room"),
+        ("Partitioning", "stage-partitioning"),
+        ("Mounting", "stage-mounting"),
+        ("Writing the configuration", "stage-configuration"),
+        ("Installing Iliada", "stage-installing"),
+        ("Setting the password", "stage-password"),
+        ("Done", "stage-done"),
+    ]
+    .iter()
+    .find(|(prefix, _)| stage.starts_with(prefix))
+    .map(|(_, key)| *key);
+    match key {
+        // Partitioning /dev/sda: Greek says it without the device.
+        Some(key) if i18n::current() != "en" => i18n::lookup_or(key, stage),
+        _ => stage.to_owned(),
+    }
+}
+
 fn region_of(zone: &str) -> &str {
     match zone.split_once('/') {
         Some((r, _)) if REGIONS.contains(&r) => r,
@@ -230,6 +269,8 @@ enum Message {
     TogglePassword,
     Region(usize),
     City(usize),
+    /// One of `LANGUAGES`: the installer and the installed system.
+    Language(usize),
     Detected(Option<String>),
     Install,
     Line(String),
@@ -263,6 +304,10 @@ struct App {
     stage: String,
     log: Vec<String>,
     error: Option<String>,
+    /// The chosen language (an index into `LANGUAGES`), and its names.
+    language: usize,
+    language_names: Vec<String>,
+    region_names: Vec<String>,
 }
 
 impl App {
@@ -308,6 +353,8 @@ impl App {
             self.hostname.clone(),
             "--timezone".into(),
             self.timezone.clone(),
+            "--language".into(),
+            LANGUAGES[self.language].0.to_owned(),
             "--yes".into(),
         ];
         let mut args = args;
@@ -324,7 +371,7 @@ impl App {
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
                     .spawn()
-                    .map_err(|e| format!("could not start the installer: {e}"))?;
+                    .map_err(|e| fl!("start-failed", error = e.to_string()))?;
                 let mut stdin = child.stdin.take().expect("piped");
                 stdin.write_all(format!("{password}\n{password}\n").as_bytes()).await.map_err(|e| e.to_string())?;
                 drop(stdin);
@@ -344,7 +391,7 @@ impl App {
                 });
                 let status = child.wait().await.map_err(|e| e.to_string())?;
                 let _ = (a.await, b.await);
-                if status.success() { Ok(()) } else { Err("the installation failed".to_owned()) }
+                if status.success() { Ok(()) } else { Err(fl!("install-failed")) }
             };
             let r = run.await;
             let _ = tx.send(Message::Finished(r));
@@ -364,6 +411,19 @@ impl App {
             rx.recv().await.map(|m| (m, State::Running(rx)))
         });
         cosmic::task::stream(stream)
+    }
+
+    /// Shows the installer in the chosen language.
+    fn set_language(&mut self, i: usize) -> Task<Message> {
+        let Some((locale, _)) = LANGUAGES.get(i) else { return Task::none() };
+        self.language = i;
+        i18n::choose(locale.split('_').next().unwrap_or("en"));
+        self.region_names = REGIONS.iter().map(|r| region_name(r)).collect();
+        self.set_header_title(fl!("install-iliada"));
+        match self.core.main_window_id() {
+            Some(id) => self.set_window_title(fl!("install-iliada"), id),
+            None => Task::none(),
+        }
     }
 
     fn page<'a>(
@@ -450,13 +510,16 @@ impl cosmic::Application for App {
             stage: String::new(),
             log: Vec::new(),
             error: None,
+            language: 0,
+            language_names: LANGUAGES.iter().map(|(_, name)| (*name).to_owned()).collect(),
+            region_names: Vec::new(),
         };
         app.set_timezone("UTC".into());
-        app.set_header_title("Install Iliada".into());
-        let title = match app.core.main_window_id() {
-            Some(id) => app.set_window_title("Install Iliada".into(), id),
-            None => Task::none(),
-        };
+        // At first the live system's language (English, unless it was
+        // started in another).
+        let shown = i18n::current();
+        let language = LANGUAGES.iter().position(|(l, _)| l.starts_with(&format!("{shown}_"))).unwrap_or(0);
+        let title = app.set_language(language);
         let detect = cosmic::task::future(async { Message::Detected(detect_timezone().await) });
         (app, Task::batch([title, detect]))
     }
@@ -522,16 +585,17 @@ impl cosmic::Application for App {
                 self.tz_guessed = true;
             }
             Message::Detected(_) => {}
+            Message::Language(i) => return self.set_language(i),
             Message::Install => {
                 self.step = Step::Installing;
                 self.log.clear();
-                self.stage = "Preparing".into();
+                self.stage = fl!("stage-preparing");
                 return self.install();
             }
             Message::Line(l) => {
                 let l = strip_ansi(&l);
                 if let Some(stage) = l.strip_prefix("==> ") {
-                    self.stage = stage.trim().to_owned();
+                    self.stage = stage_name(stage.trim());
                 }
                 if !l.trim().is_empty() {
                     if self.log.len() == 200 {
@@ -557,23 +621,25 @@ impl cosmic::Application for App {
         let spacing = cosmic::theme::spacing();
         match self.step {
             Step::Welcome => self.page(
-                "Install Iliada",
-                "Iliada will be installed on this computer's disk. You can also keep trying it: \
-                 nothing is changed until you confirm, a few steps from now.",
-                vec![],
+                fl!("install-iliada"),
+                fl!("welcome-body"),
                 vec![
-                    widget::button::standard("Keep trying Iliada").on_press(Message::Quit),
-                    widget::button::suggested("Continue").on_press(Message::Go(Step::Disk)),
+                    widget::column::with_capacity(2)
+                        .push(widget::text::caption_heading(fl!("language")))
+                        .push(widget::dropdown(&self.language_names, Some(self.language), Message::Language))
+                        .spacing(spacing.space_xxs)
+                        .into(),
+                ],
+                vec![
+                    widget::button::standard(fl!("keep-trying")).on_press(Message::Quit),
+                    widget::button::suggested(fl!("continue")).on_press(Message::Go(Step::Disk)),
                 ],
             ),
             Step::Disk => {
                 let content: Element<_> = match &self.disks {
                     None => widget::progress_bar::circular::Circular::new().size(24.0).into(),
-                    Some(Err(e)) => widget::text::body(format!("Could not list the disks: {e}")).into(),
-                    Some(Ok(list)) if list.is_empty() => widget::text::body(
-                        "There is no disk of at least 20 GB to install on. Connect one, then go back and try again.",
-                    )
-                    .into(),
+                    Some(Err(e)) => widget::text::body(fl!("disks-failed", error = e.as_str())).into(),
+                    Some(Ok(list)) if list.is_empty() => widget::text::body(fl!("no-disk")).into(),
                     Some(Ok(list)) => {
                         let mut col = widget::column::with_capacity(list.len()).spacing(spacing.space_xs);
                         for (i, d) in list.iter().enumerate() {
@@ -583,25 +649,29 @@ impl cosmic::Application for App {
                             let mut card = widget::column::with_capacity(4)
                                 .push(widget::text::heading(d.label()))
                                 .spacing(spacing.space_xs);
-                            match d.holds.as_deref() {
-                                Some(what) if d.can_keep() => {
+                            let (what, kind) = d.holds_words();
+                            let erase = fl!("erase-whole", what = what.as_str(), kind = kind);
+                            match d.holds {
+                                Some(_) if d.can_keep() => {
+                                    let free = gb(d.free);
                                     card = card
                                         .push(option(
-                                            format!("Next to {what}, in its {} of free space", gb(d.free)),
+                                            fl!("next-to", what = what.as_str(), kind = kind, free = free),
                                             true,
                                         ))
-                                        .push(option(format!("Erase {what} and use the whole disk"), false));
+                                        .push(option(erase, false));
                                 }
-                                Some(what) => {
-                                    card = card.push(option(format!("Erase {what} and use the whole disk"), false)).push(
-                                        widget::text::caption(format!(
-                                            "To keep {what}, Iliada needs {} of free space next to it; this disk has {}.",
-                                            gb(MIN_FREE),
-                                            gb(d.free)
-                                        )),
-                                    );
+                                Some(_) => {
+                                    let (need, free) = (gb(MIN_FREE), gb(d.free));
+                                    card = card.push(option(erase, false)).push(widget::text::caption(fl!(
+                                        "needs-free",
+                                        what = what.as_str(),
+                                        kind = kind,
+                                        need = need,
+                                        free = free
+                                    )));
                                 }
-                                None => card = card.push(option("Use the whole disk (it is empty)".into(), false)),
+                                None => card = card.push(option(fl!("whole-empty"), false)),
                             }
                             col = col.push(
                                 widget::container(card)
@@ -614,39 +684,38 @@ impl cosmic::Application for App {
                     }
                 };
                 self.page(
-                    "Where should Iliada go?",
-                    "Iliada can go next to what is already on a disk, if there is room, or replace it.",
+                    fl!("where-title"),
+                    fl!("where-body"),
                     vec![content],
                     vec![
-                        widget::button::standard("Back").on_press(Message::Go(Step::Welcome)),
-                        widget::button::suggested("Continue")
+                        widget::button::standard(fl!("back")).on_press(Message::Go(Step::Welcome)),
+                        widget::button::suggested(fl!("continue"))
                             .on_press_maybe(self.chosen().is_some().then_some(Message::Go(Step::You))),
                     ],
                 )
             }
             Step::You => {
-                let field =
-                    |label: &'static str, input: widget::TextInput<'static, Message>| -> Element<'static, Message> {
-                        widget::column::with_capacity(2)
-                            .push(widget::text::caption_heading(label))
-                            .push(input.width(Length::Fill))
-                            .spacing(spacing.space_xxs)
-                            .into()
-                    };
+                let field = |label: String, input: widget::TextInput<'static, Message>| -> Element<'static, Message> {
+                    widget::column::with_capacity(2)
+                        .push(widget::text::caption_heading(label))
+                        .push(input.width(Length::Fill))
+                        .spacing(spacing.space_xxs)
+                        .into()
+                };
                 let mut content = vec![
                     field(
-                        "Your name",
+                        fl!("your-name"),
                         widget::text_input("Alex Papadopoulos", self.full_name.clone()).on_input(Message::FullName),
                     ),
-                    field("Account name", widget::text_input("alex", self.user.clone()).on_input(Message::User)),
+                    field(fl!("account-name"), widget::text_input("alex", self.user.clone()).on_input(Message::User)),
                     field(
-                        "Computer name",
+                        fl!("computer-name"),
                         widget::text_input("alex-computer", self.hostname.clone()).on_input(Message::Hostname),
                     ),
                     field(
-                        "Password",
+                        fl!("password"),
                         widget::secure_input(
-                            "Password",
+                            fl!("password"),
                             self.password.clone(),
                             Some(Message::TogglePassword),
                             !self.show_password,
@@ -654,9 +723,9 @@ impl cosmic::Application for App {
                         .on_input(Message::Password),
                     ),
                     field(
-                        "Repeat the password",
+                        fl!("repeat-password"),
                         widget::secure_input(
-                            "Password",
+                            fl!("password"),
                             self.again.clone(),
                             Some(Message::TogglePassword),
                             !self.show_password,
@@ -667,59 +736,59 @@ impl cosmic::Application for App {
                 let region = REGIONS.iter().position(|r| *r == region_of(&self.timezone));
                 let city = self.city_zones.iter().position(|z| *z == self.timezone);
                 let mut zone = widget::column::with_capacity(3)
-                    .push(widget::text::caption_heading("Time zone"))
+                    .push(widget::text::caption_heading(fl!("time-zone")))
                     .push(
                         widget::row::with_capacity(2)
-                            .push(widget::dropdown(REGIONS, region, Message::Region).width(Length::FillPortion(2)))
+                            .push(
+                                widget::dropdown(&self.region_names, region, Message::Region)
+                                    .width(Length::FillPortion(2)),
+                            )
                             .push(widget::dropdown(&self.cities, city, Message::City).width(Length::FillPortion(3)))
                             .spacing(spacing.space_xs),
                     )
                     .spacing(spacing.space_xxs);
                 if self.tz_guessed && !self.tz_chosen {
-                    zone = zone.push(widget::text::caption("Found from your internet connection."));
+                    zone = zone.push(widget::text::caption(fl!("tz-found")));
                 }
                 content.push(zone.into());
                 let mut hints = Vec::new();
                 if !self.user.is_empty() && !valid_user(&self.user) {
-                    hints.push("The account name can use lowercase letters, digits, - and _.");
+                    hints.push(fl!("hint-user"));
                 }
                 if !self.hostname.is_empty() && !valid_hostname(&self.hostname) {
-                    hints.push("The computer name can use letters, digits and -.");
+                    hints.push(fl!("hint-hostname"));
                 }
                 if !self.again.is_empty() && self.password != self.again {
-                    hints.push("The passwords don't match.");
+                    hints.push(fl!("hint-passwords"));
                 }
                 for h in hints {
                     content.push(widget::text::caption(h).into());
                 }
                 self.page(
-                    "About you",
-                    "Your account is an administrator: it can install apps and change settings.",
+                    fl!("about-you"),
+                    fl!("about-you-body"),
                     vec![widget::column::with_children(content).spacing(spacing.space_s).into()],
                     vec![
-                        widget::button::standard("Back").on_press(Message::Go(Step::Disk)),
-                        widget::button::suggested("Continue")
+                        widget::button::standard(fl!("back")).on_press(Message::Go(Step::Disk)),
+                        widget::button::suggested(fl!("continue"))
                             .on_press_maybe(self.you_ok().then_some(Message::Go(Step::Confirm))),
                     ],
                 )
             }
             Step::Confirm => {
                 let disk = self.chosen().map(Disk::label).unwrap_or_default();
-                let what = self.chosen().and_then(|d| d.holds.clone()).unwrap_or_else(|| "the other system".into());
+                let (what, kind) = self.chosen().map_or_else(|| (fl!("the-other-system"), "system"), Disk::holds_words);
                 let (title, body, go) = if self.keep() {
                     (
-                        format!("Install Iliada next to {what}?"),
-                        format!(
-                            "{what} stays as it is. When the computer starts, Iliada starts; to start {what} \
-                             instead, open the start-up menu (usually F9, F12 or Esc while the computer starts)."
-                        ),
-                        widget::button::suggested("Install"),
+                        fl!("confirm-keep-title", what = what.as_str(), kind = kind),
+                        fl!("confirm-keep-body", what = what.as_str(), kind = kind),
+                        widget::button::suggested(fl!("install")),
                     )
                 } else {
                     (
-                        "Erase the disk and install Iliada?".to_owned(),
-                        "Everything on this disk will be erased. This can't be undone.".to_owned(),
-                        widget::button::destructive("Erase and install"),
+                        fl!("confirm-erase-title"),
+                        fl!("confirm-erase-body"),
+                        widget::button::destructive(fl!("erase-and-install")),
                     )
                 };
                 self.page(
@@ -727,17 +796,18 @@ impl cosmic::Application for App {
                     body,
                     vec![
                         widget::text::heading(disk).into(),
-                        widget::text::body(format!(
-                            "{} ({}) on \"{}\", time zone {}.",
-                            self.full_name.trim(),
-                            self.user,
-                            self.hostname,
-                            self.timezone
+                        widget::text::body(fl!(
+                            "confirm-summary",
+                            name = self.full_name.trim(),
+                            user = self.user.as_str(),
+                            hostname = self.hostname.as_str(),
+                            timezone = self.timezone.as_str(),
+                            language = LANGUAGES[self.language].1
                         ))
                         .into(),
                     ],
                     vec![
-                        widget::button::standard("Back").on_press(Message::Go(Step::You)),
+                        widget::button::standard(fl!("back")).on_press(Message::Go(Step::You)),
                         go.on_press(Message::Install),
                     ],
                 )
@@ -745,8 +815,8 @@ impl cosmic::Application for App {
             Step::Installing => {
                 let last = self.log.last().map(String::as_str).unwrap_or("");
                 self.page(
-                    "Installing Iliada",
-                    "This takes a while: Iliada is downloaded and set up for this computer. Keep it connected to the internet and to power.",
+                    fl!("installing-title"),
+                    fl!("installing-body"),
                     vec![
                         widget::row::with_capacity(2)
                             .push(widget::progress_bar::circular::Circular::new().size(24.0))
@@ -760,16 +830,16 @@ impl cosmic::Application for App {
                 )
             }
             Step::Done => self.page(
-                "Iliada is installed",
-                "Remove the installation USB stick (or disc), then restart. Log in with the password you chose.",
+                fl!("installed-title"),
+                fl!("installed-body"),
                 vec![],
-                vec![widget::button::suggested("Restart now").on_press(Message::Restart)],
+                vec![widget::button::suggested(fl!("restart-now")).on_press(Message::Restart)],
             ),
             Step::Failed => {
                 let tail: Vec<&str> = self.log.iter().rev().take(12).rev().map(String::as_str).collect();
                 self.page(
-                    "The installation did not finish",
-                    "Nothing on this computer is usable yet. Check the internet connection and try again.",
+                    fl!("failed-title"),
+                    fl!("failed-body"),
                     vec![
                         widget::text::body(self.error.clone().unwrap_or_default()).into(),
                         widget::container(widget::text::monotext(tail.join("\n")))
@@ -779,8 +849,8 @@ impl cosmic::Application for App {
                             .into(),
                     ],
                     vec![
-                        widget::button::standard("Quit").on_press(Message::Quit),
-                        widget::button::suggested("Try again").on_press(Message::Go(Step::Confirm)),
+                        widget::button::standard(fl!("quit")).on_press(Message::Quit),
+                        widget::button::suggested(fl!("try-again")).on_press(Message::Go(Step::Confirm)),
                     ],
                 )
             }

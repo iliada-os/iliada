@@ -17,7 +17,8 @@ use cosmic::{ApplicationExt, Core, Element, executor};
 use futures_util::StreamExt;
 use iliada_catalog::AppEntry;
 use iliada_settings::account::{self, Account};
-use iliada_settings::{Progress, ago, open_url, run};
+use iliada_settings::i18n::{LANGUAGE_NAMES, ago, is_greek, session_has_language};
+use iliada_settings::{Progress, fl, open_url, run};
 use iliada_store::{Store, StoreConfig};
 use iliada_system::client;
 use iliada_system::protocol::{Backup, Event, Request, Status};
@@ -74,6 +75,9 @@ enum Message {
     Icon(String, Option<Vec<u8>>, bool),
     Toggle(String),
     InstallApps,
+    /// One of `iliada_system::settings::LANGUAGES`.
+    Language(usize),
+    LogOut,
     Finish,
 }
 
@@ -91,6 +95,9 @@ struct App {
     error: Option<String>,
     /// The step to return to after an error.
     back: Step,
+    /// The step after the work in progress (the last page, or the welcome
+    /// page after changing the language).
+    next: Step,
     account: Account,
     /// The "Choose your apps" page: None while agora is asked.
     picks: Option<Result<Vec<Pick>, String>>,
@@ -104,9 +111,9 @@ impl App {
         self.status.as_ref().is_some_and(|s| s.admin && s.backup.available)
     }
 
-    fn start(&mut self, request: Request, what: &str, back: Step) -> Task<Message> {
+    fn start(&mut self, request: Request, what: String, back: Step) -> Task<Message> {
         self.error = None;
-        self.working = what.to_owned();
+        self.working = what;
         self.line.clear();
         self.back = back;
         self.step = Step::Working;
@@ -130,7 +137,7 @@ impl App {
                 .into(),
         };
         let mark: Element<_> = if p.installed {
-            widget::text::caption("Installed").into()
+            widget::text::caption(fl!("installed")).into()
         } else if selected {
             widget::icon::from_name("object-select-symbolic").size(16).icon().into()
         } else {
@@ -138,7 +145,7 @@ impl App {
         };
         let text = widget::column::with_capacity(2)
             .push(widget::text::heading(p.name.as_str()))
-            .push(widget::text::caption(p.blurb))
+            .push(widget::text::caption(p.blurb.as_str()))
             .spacing(spacing.space_xxxs)
             .width(Length::Fill);
         let row = widget::row::with_capacity(3)
@@ -156,21 +163,26 @@ impl App {
             .into()
     }
 
-    fn page<'a>(&'a self, title: &'a str, body: &'a str, content: Vec<Element<'a, Message>>) -> Element<'a, Message> {
+    fn page<'a>(
+        &'a self,
+        title: impl Into<String>,
+        body: impl Into<String>,
+        content: Vec<Element<'a, Message>>,
+    ) -> Element<'a, Message> {
         self.page_with(title, body, content, 520.0)
     }
 
     fn page_with<'a>(
         &'a self,
-        title: &'a str,
-        body: &'a str,
+        title: impl Into<String>,
+        body: impl Into<String>,
         content: Vec<Element<'a, Message>>,
         width: f32,
     ) -> Element<'a, Message> {
         let spacing = cosmic::theme::spacing();
         let mut col = widget::column::with_capacity(content.len() + 3)
-            .push(widget::text::title2(title))
-            .push(widget::text::body(body))
+            .push(widget::text::title2(title.into()))
+            .push(widget::text::body(body.into()))
             .spacing(spacing.space_m)
             .align_x(Alignment::Center)
             .max_width(width);
@@ -192,29 +204,30 @@ impl App {
 }
 
 /// What the "Choose your apps" page offers, in order: (Store id, or
-/// `chrome`; a few plain words; ticked at first; a browser).
+/// `chrome`; a few plain words (their message id); ticked at first; a
+/// browser).
 const PICKS: &[(&str, &str, bool, bool)] = &[
     // Chrome is the browser most people know: ticked (where Google makes it,
     // Intel and AMD; elsewhere Firefox is, see `picks`).
-    ("org.debian.firefox-esr", "Fast, private browsing", false, true),
-    (CHROME, "Google's browser", true, true),
-    ("org.debian.chromium", "Chrome without Google's extras", false, true),
-    ("org.debian.libreoffice-writer", "Documents, like Word", true, false),
-    ("org.debian.libreoffice-calc", "Spreadsheets, like Excel", true, false),
-    ("org.debian.libreoffice-impress", "Slides, like PowerPoint", false, false),
-    ("org.debian.thunderbird", "Email and calendar", false, false),
-    ("org.debian.vlc-bin", "Plays any video or music", true, false),
+    ("org.debian.firefox-esr", "pick-firefox", false, true),
+    (CHROME, "pick-chrome", true, true),
+    ("org.debian.chromium", "pick-chromium", false, true),
+    ("org.debian.libreoffice-writer", "pick-writer", true, false),
+    ("org.debian.libreoffice-calc", "pick-calc", true, false),
+    ("org.debian.libreoffice-impress", "pick-impress", false, false),
+    ("org.debian.thunderbird", "pick-thunderbird", false, false),
+    ("org.debian.vlc-bin", "pick-vlc", true, false),
     // Iliada comes with Photos and Document Reader: these are extras.
-    ("org.debian.loupe", "Another photo viewer", false, false),
-    ("org.debian.evince", "Read and fill in PDFs", false, false),
-    ("org.debian.gimp", "Edit photos", false, false),
-    ("org.debian.inkscape", "Drawings and logos", false, false),
-    ("org.debian.audacity", "Record and edit sound", false, false),
-    ("org.debian.gnome-clocks", "Alarms, timers, world clocks", false, false),
-    ("org.debian.file-roller", "Open and make zip files", false, false),
-    ("org.debian.transmission-gtk", "Download torrents", false, false),
-    ("org.debian.gnome-mines", "A quick game", false, false),
-    ("org.debian.gnome-sudoku", "A number puzzle", false, false),
+    ("org.debian.loupe", "pick-loupe", false, false),
+    ("org.debian.evince", "pick-evince", false, false),
+    ("org.debian.gimp", "pick-gimp", false, false),
+    ("org.debian.inkscape", "pick-inkscape", false, false),
+    ("org.debian.audacity", "pick-audacity", false, false),
+    ("org.debian.gnome-clocks", "pick-clocks", false, false),
+    ("org.debian.file-roller", "pick-file-roller", false, false),
+    ("org.debian.transmission-gtk", "pick-transmission", false, false),
+    ("org.debian.gnome-mines", "pick-mines", false, false),
+    ("org.debian.gnome-sudoku", "pick-sudoku", false, false),
 ];
 const CHROME: &str = "chrome";
 /// Google's .deb is about this big; it isn't in the catalog.
@@ -227,7 +240,7 @@ struct Pick {
     key: String,
     /// What `iliada install` is given, and what the person reads.
     name: String,
-    blurb: &'static str,
+    blurb: String,
     size: u64,
     icon: Option<String>,
     browser: bool,
@@ -251,6 +264,7 @@ fn picks(apps: &[AppEntry], installed: &BTreeSet<String>, arch: &str) -> Vec<Pic
             let installed = installed.contains(key) || installed.contains(&name);
             // No Chrome here (ARM): Firefox is the browser ticked instead.
             let default = default || (key == "org.debian.firefox-esr" && arch != "x86_64");
+            let blurb = iliada_settings::i18n::lookup(blurb).unwrap_or_default();
             Some(Pick { key: key.to_owned(), name, blurb, size, icon, browser, default, installed })
         })
         .collect()
@@ -267,9 +281,12 @@ async fn load_picks() -> Result<Vec<Pick>, String> {
 /// "About 850 MB", "About 1.2 GB".
 fn download_size(bytes: u64) -> String {
     if bytes >= 1_000_000_000 {
-        format!("About {:.1} GB", bytes as f64 / 1e9)
+        let size = format!("{:.1}", bytes as f64 / 1e9);
+        // A decimal comma in Greek: 1,2 GB.
+        let size = if is_greek() { size.replace('.', ",") } else { size };
+        fl!("size-gb", size = size)
     } else {
-        format!("About {} MB", (bytes / 10_000_000).max(1) * 10)
+        fl!("size-mb", size = ((bytes / 10_000_000).max(1) * 10).to_string())
     }
 }
 
@@ -278,7 +295,7 @@ fn and_list(items: &[String]) -> String {
     match items {
         [] => String::new(),
         [one] => one.clone(),
-        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+        [rest @ .., last] => fl!("and-list", rest = rest.join(", "), last = last.as_str()),
     }
 }
 
@@ -376,14 +393,15 @@ impl cosmic::Application for App {
             summary: Vec::new(),
             error: None,
             back: Step::Choice,
+            next: Step::Done,
             account: Account::default(),
             picks: None,
             picked: BTreeSet::new(),
             icons: BTreeMap::new(),
         };
-        app.set_header_title("Welcome".into());
+        app.set_header_title(fl!("setup-welcome"));
         let title = match app.core.main_window_id() {
-            Some(id) => app.set_window_title("Welcome to Iliada".into(), id),
+            Some(id) => app.set_window_title(fl!("setup-welcome-title"), id),
             None => Task::none(),
         };
         let status =
@@ -410,7 +428,7 @@ impl cosmic::Application for App {
                     return self.account.refresh().map(account_action);
                 }
                 if self.step == Step::Account && self.account.signed_in() {
-                    self.summary.push("Your settings are backed up to your Iliada account, encrypted.".into());
+                    self.summary.push(fl!("summary-account"));
                 }
                 self.step = match step {
                     // Nothing to restore from or back up to: on to the apps, then the end.
@@ -439,16 +457,16 @@ impl cosmic::Application for App {
             Message::Backups(b) => self.backups = Some(b),
             Message::Restore(repo) => {
                 let name = repo.split_once('/').map(|(_, r)| r).unwrap_or(&repo).to_owned();
-                self.summary.push(format!("Restored your apps and settings from {name}."));
-                return self.start(Request::Restore { repo }, "Restoring your apps and settings", Step::PickBackup);
+                self.summary.push(fl!("summary-restored", name = name));
+                return self.start(Request::Restore { repo }, fl!("restoring-apps-settings"), Step::PickBackup);
             }
             Message::Account(m) => return self.account.update(m).map(account_action),
             Message::Name(n) => self.name = n,
             Message::EnableBackup => {
                 let name = self.name.trim().to_owned();
                 if iliada_system::github::valid_name(&name) {
-                    self.summary.push(format!("Your apps and settings are backed up to iliada_{name} on GitHub."));
-                    return self.start(Request::BackupEnable { name }, "Setting up your backup", Step::NameBackup);
+                    self.summary.push(fl!("summary-backed-up", name = name.as_str()));
+                    return self.start(Request::BackupEnable { name }, fl!("setting-up-backup"), Step::NameBackup);
                 }
             }
             Message::Progress(Progress::Event(Event::SignInCode { code, url })) => {
@@ -475,7 +493,12 @@ impl cosmic::Application for App {
                     }
                     return status;
                 }
-                (Step::Working, Ok(_)) => self.step = Step::Done,
+                (Step::Working, Ok(_)) => {
+                    self.step = std::mem::replace(&mut self.next, Step::Done);
+                    return cosmic::task::future(async {
+                        Message::Status(client::status().await.map_err(|e| format!("{e:#}")))
+                    });
+                }
                 (_, Err(e)) => {
                     if matches!(self.step, Step::Working) {
                         self.summary.pop();
@@ -519,16 +542,26 @@ impl cosmic::Application for App {
                 names.sort_by_key(|n| n == "Google Chrome");
                 if !names.is_empty() {
                     if let Err(e) = install_in_background(&names) {
-                        self.error = Some(format!("Could not start installing the apps: {e}"));
+                        self.error = Some(fl!("install-start-failed", error = e.to_string()));
                         return Task::none();
                     }
-                    let are = if names.len() == 1 { "is" } else { "are" };
-                    self.summary.push(format!(
-                        "{} {are} downloading. Each one appears in Applications when it's ready.",
-                        and_list(&names)
-                    ));
+                    self.summary.push(fl!("summary-downloading", count = names.len(), apps = and_list(&names)));
                 }
                 return self.update(Message::Go(Step::NameBackup));
+            }
+            Message::Language(i) => {
+                let Some((locale, _)) = iliada_system::settings::LANGUAGES.get(i) else { return Task::none() };
+                if self.status.as_ref().is_some_and(|s| s.language == *locale) {
+                    return Task::none();
+                }
+                // Back here afterwards: the rest of setup goes on as before.
+                self.next = Step::Welcome;
+                let request = Request::SetLanguage { locale: (*locale).to_owned() };
+                return self.start(request, fl!("activity-language"), Step::Welcome);
+            }
+            Message::LogOut => {
+                // Setup opens again after logging in, in the new language.
+                let _ = std::process::Command::new("cosmic-osd").arg("log-out").spawn();
             }
             Message::Finish => {
                 if let Some(m) = done_marker() {
@@ -546,28 +579,44 @@ impl cosmic::Application for App {
     fn view(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
         match &self.step {
-            Step::Welcome => self.page(
-                "Welcome to Iliada",
-                "Apps are in Applications, each in its own sandbox. Get more from agora; \
-                 install one by dragging it into Applications, remove it by dragging it to the Trash.",
-                vec![widget::button::suggested("Continue").on_press(Message::Go(Step::Account)).into()],
-            ),
+            Step::Welcome => {
+                let mut content: Vec<Element<_>> = Vec::new();
+                // The language, for an administrator (it is the whole computer's).
+                if let Some(s) = self.status.as_ref().filter(|s| s.admin) {
+                    let selected = iliada_system::settings::LANGUAGES.iter().position(|(l, _)| *l == s.language);
+                    content.push(
+                        widget::row::with_capacity(2)
+                            .push(widget::text::body(fl!("setup-language")))
+                            .push(widget::dropdown(&LANGUAGE_NAMES[..], selected, Message::Language))
+                            .spacing(spacing.space_s)
+                            .align_y(Alignment::Center)
+                            .into(),
+                    );
+                    if !session_has_language(&s.language) {
+                        let name = iliada_settings::i18n::language_name(&s.language);
+                        content.push(
+                            widget::row::with_capacity(2)
+                                .push(widget::text::body(fl!("language-pending", language = name)))
+                                .push(widget::button::standard(fl!("log-out")).on_press(Message::LogOut))
+                                .spacing(spacing.space_s)
+                                .align_y(Alignment::Center)
+                                .into(),
+                        );
+                    }
+                }
+                content.push(widget::button::suggested(fl!("continue")).on_press(Message::Go(Step::Account)).into());
+                self.page(fl!("setup-welcome-title"), fl!("setup-welcome-body"), content)
+            }
             Step::Account => {
                 let coming_soon = self.account.coming_soon();
                 let next = if self.account.in_flow() {
                     None
                 } else if coming_soon || self.account.signed_in() {
-                    Some(widget::button::suggested("Continue"))
+                    Some(widget::button::suggested(fl!("continue")))
                 } else {
-                    Some(widget::button::standard("Not now"))
+                    Some(widget::button::standard(fl!("not-now")))
                 };
-                let body = if coming_soon {
-                    "Iliada accounts are coming soon. They'll remember your settings and bring them to a new \
-                     computer. Until then, you can back up to GitHub in a moment."
-                } else {
-                    "Sign in to keep your desktop settings, Privacy answers and conversations with Homer \
-                     backed up, encrypted so only you can read them. New here? Signing in makes your account."
-                };
+                let body = if coming_soon { fl!("setup-account-soon") } else { fl!("setup-account-body") };
                 let mut content: Vec<Element<_>> = Vec::new();
                 if !coming_soon {
                     content.push(self.account.view_setup().map(Message::Account));
@@ -575,43 +624,40 @@ impl cosmic::Application for App {
                 if let Some(b) = next {
                     content.push(b.on_press(Message::Go(Step::Choice)).into());
                 }
-                self.page("Your Iliada account", body, content)
+                self.page(fl!("setup-account-title"), body, content)
             }
             Step::Choice => self.page(
-                "Have you used Iliada before?",
-                "If you backed up another computer to GitHub, bring its apps and settings here.",
+                fl!("setup-used-before"),
+                fl!("setup-used-before-body"),
                 vec![buttons(vec![
-                    widget::button::suggested("Restore from a backup").on_press(Message::SignIn(Step::PickBackup)),
-                    widget::button::standard("Set up as new").on_press(Message::Go(Step::Apps)),
+                    widget::button::suggested(fl!("restore-from-backup")).on_press(Message::SignIn(Step::PickBackup)),
+                    widget::button::standard(fl!("set-up-as-new")).on_press(Message::Go(Step::Apps)),
                 ])],
             ),
             Step::SignIn { .. } => {
                 let mut content: Vec<Element<_>> = Vec::new();
                 match &self.code {
                     Some((code, _)) => {
-                        content.push(widget::text::body("Enter this code on GitHub:").into());
+                        content.push(widget::text::body(fl!("enter-code-github")).into());
                         content.push(widget::text::title1(code.as_str()).into());
-                        content.push(widget::button::suggested("Open GitHub").on_press(Message::OpenGitHub).into());
-                        content.push(widget::text::caption("Waiting for you to approve it…").into());
+                        content
+                            .push(widget::button::suggested(fl!("open-github")).on_press(Message::OpenGitHub).into());
+                        content.push(widget::text::caption(fl!("waiting-for-approval")).into());
                     }
                     None => content.push(widget::progress_bar::circular::Circular::new().size(24.0).into()),
                 }
-                content.push(widget::button::text("Back").on_press(Message::Go(self.back.clone())).into());
-                self.page(
-                    "Sign in to GitHub",
-                    "Iliada keeps your backup in a private repository on your account.",
-                    content,
-                )
+                content.push(widget::button::text(fl!("back")).on_press(Message::Go(self.back.clone())).into());
+                self.page(fl!("sign-in-to-github"), fl!("sign-in-to-github-body"), content)
             }
             Step::PickBackup => {
                 let mut content: Vec<Element<_>> = Vec::new();
                 match &self.backups {
                     None => content.push(widget::progress_bar::circular::Circular::new().size(24.0).into()),
                     Some(Err(e)) => {
-                        content.push(widget::text::body(format!("Could not list your backups: {e}")).into())
+                        content.push(widget::text::body(fl!("backups-list-failed-error", error = e.as_str())).into())
                     }
                     Some(Ok(list)) if list.is_empty() => {
-                        content.push(widget::text::body("There are no Iliada backups on this account yet.").into())
+                        content.push(widget::text::body(fl!("no-iliada-backups")).into())
                     }
                     Some(Ok(list)) => {
                         let mut col = widget::column::with_capacity(list.len()).spacing(spacing.space_xs);
@@ -621,10 +667,13 @@ impl cosmic::Application for App {
                                 .push(
                                     widget::column::with_capacity(2)
                                         .push(widget::text::heading(b.name.clone()))
-                                        .push(widget::text::caption(format!("Last backup {date}")))
+                                        .push(widget::text::caption(fl!("last-backup-date", date = date)))
                                         .width(Length::Fill),
                                 )
-                                .push(widget::button::suggested("Restore").on_press(Message::Restore(b.repo.clone())))
+                                .push(
+                                    widget::button::suggested(fl!("restore"))
+                                        .on_press(Message::Restore(b.repo.clone())),
+                                )
                                 .align_y(Alignment::Center);
                             col = col.push(
                                 widget::container(row)
@@ -636,8 +685,9 @@ impl cosmic::Application for App {
                         content.push(col.into());
                     }
                 }
-                content.push(widget::button::text("Set up as new instead").on_press(Message::Go(Step::Apps)).into());
-                self.page("Choose a backup", "Its apps and settings replace this computer's.", content)
+                content
+                    .push(widget::button::text(fl!("set-up-as-new-instead")).on_press(Message::Go(Step::Apps)).into());
+                self.page(fl!("choose-backup"), fl!("choose-backup-body"), content)
             }
             Step::Apps => {
                 // After the apps: the backup, when there can be one.
@@ -645,22 +695,17 @@ impl cosmic::Application for App {
                 match &self.picks {
                     None => {
                         content.push(widget::progress_bar::circular::Circular::new().size(24.0).into());
-                        content.push(widget::text::caption("Looking in agora…").into());
-                        content.push(widget::button::text("Skip").on_press(Message::Go(Step::NameBackup)).into());
+                        content.push(widget::text::caption(fl!("looking-in-agora")).into());
+                        content.push(widget::button::text(fl!("skip")).on_press(Message::Go(Step::NameBackup)).into());
                     }
                     Some(Err(_)) => {
+                        content.push(widget::text::body(fl!("agora-unreachable")).into());
                         content.push(
-                            widget::text::body(
-                                "agora can't be reached right now (is the internet connected?). \
-                                 Get apps from agora in the dock any time.",
-                            )
-                            .into(),
+                            widget::button::suggested(fl!("continue")).on_press(Message::Go(Step::NameBackup)).into(),
                         );
-                        content
-                            .push(widget::button::suggested("Continue").on_press(Message::Go(Step::NameBackup)).into());
                     }
                     Some(Ok(picks)) => {
-                        for (label, browser) in [("Browser", true), ("Apps", false)] {
+                        for (label, browser) in [(fl!("browser"), true), (fl!("apps"), false)] {
                             let cards: Vec<Element<_>> =
                                 picks.iter().filter(|p| p.browser == browser).map(|p| self.card(p)).collect();
                             if cards.is_empty() {
@@ -683,37 +728,31 @@ impl cosmic::Application for App {
                         let size: u64 = picks.iter().filter(|p| chosen.contains(&p.name)).map(|p| p.size).sum();
                         content.push(
                             widget::text::caption(if chosen.is_empty() {
-                                "Nothing to download.".to_owned()
+                                fl!("nothing-to-download")
                             } else {
-                                format!("{} to download, while you carry on.", download_size(size))
+                                fl!("to-download", size = download_size(size))
                             })
                             .into(),
                         );
                         content.push(buttons(vec![
                             widget::button::suggested(if chosen.is_empty() {
-                                "Continue"
+                                fl!("continue")
                             } else {
-                                "Install and continue"
+                                fl!("install-and-continue")
                             })
                             .on_press(Message::InstallApps),
                         ]));
                     }
                 }
-                self.page_with(
-                    "Choose your apps",
-                    "Pick what you'd like to start with. Each app comes sandboxed and sees only what you allow. \
-                     agora has more.",
-                    content,
-                    760.0,
-                )
+                self.page_with(fl!("choose-apps"), fl!("choose-apps-body"), content, 760.0)
             }
             Step::NameBackup => {
                 let signed_in = self.status.as_ref().and_then(|s| s.backup.account.clone());
                 let mut content: Vec<Element<_>> = Vec::new();
                 match signed_in {
                     None => content.push(buttons(vec![
-                        widget::button::suggested("Sign in with GitHub").on_press(Message::SignIn(Step::NameBackup)),
-                        widget::button::standard("Not now").on_press(Message::Go(Step::Done)),
+                        widget::button::suggested(fl!("sign-in-github")).on_press(Message::SignIn(Step::NameBackup)),
+                        widget::button::standard(fl!("not-now")).on_press(Message::Go(Step::Done)),
                     ])),
                     Some(account) => {
                         let valid = iliada_system::github::valid_name(self.name.trim());
@@ -730,21 +769,17 @@ impl cosmic::Application for App {
                                 .into(),
                         );
                         content.push(buttons(vec![
-                            widget::button::suggested("Back up").on_press_maybe(valid.then_some(Message::EnableBackup)),
-                            widget::button::standard("Not now").on_press(Message::Go(Step::Done)),
+                            widget::button::suggested(fl!("back-up"))
+                                .on_press_maybe(valid.then_some(Message::EnableBackup)),
+                            widget::button::standard(fl!("not-now")).on_press(Message::Go(Step::Done)),
                         ]));
                     }
                 }
-                self.page(
-                    "Back up this computer",
-                    "Iliada can keep your apps and settings in a private GitHub repository, updated after every change. \
-                     A new computer is then ready in minutes.",
-                    content,
-                )
+                self.page(fl!("back-up-this-computer"), fl!("back-up-this-computer-body"), content)
             }
             Step::Working => self.page(
-                &self.working,
-                "This can take a few minutes.",
+                self.working.as_str(),
+                fl!("few-minutes"),
                 vec![
                     widget::progress_bar::circular::Circular::new().size(32.0).into(),
                     widget::text::caption(self.line.as_str()).into(),
@@ -754,11 +789,11 @@ impl cosmic::Application for App {
                 let mut content: Vec<Element<_>> =
                     self.summary.iter().map(|s| widget::text::body(s.as_str()).into()).collect();
                 if let Some(t) = self.status.as_ref().and_then(|s| s.backup.last_backup) {
-                    content.push(widget::text::caption(format!("Last backup {}", ago(t))).into());
+                    content.push(widget::text::caption(fl!("last-backup-ago", ago = ago(t))).into());
                 }
-                content.push(widget::text::caption("Change these any time in Settings.").into());
-                content.push(widget::button::suggested("Start using Iliada").on_press(Message::Finish).into());
-                self.page("You're all set", "Find apps in Applications and agora, both in the dock.", content)
+                content.push(widget::text::caption(fl!("change-in-settings")).into());
+                content.push(widget::button::suggested(fl!("start-using")).on_press(Message::Finish).into());
+                self.page(fl!("all-set"), fl!("all-set-body"), content)
             }
         }
     }
