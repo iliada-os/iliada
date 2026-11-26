@@ -3017,6 +3017,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "toml 0.8.23",
+ "toml_edit 0.22.27",
 ]
 
 [[package]]
@@ -3081,7 +3082,9 @@ name = "iliada-search"
 version = "0.2.7"
 dependencies = [
  "anyhow",
+ "chacha20poly1305",
  "chrono",
+ "getrandom 0.3.4",
  "ignore",
  "iliada-catalog",
  "iliada-store",
@@ -3091,17 +3094,23 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "toml 0.8.23",
  "tracing",
  "tracing-subscriber",
+ "wayland-client",
+ "wayland-protocols-wlr",
 ]
 
 [[package]]
 name = "iliada-search-overlay"
 version = "0.2.7"
 dependencies = [
+ "i18n-embed",
+ "i18n-embed-fl",
  "iliada-search",
  "iliada-system",
  "libcosmic",
+ "rust-embed",
  "tokio",
 ]
 
@@ -3119,6 +3128,7 @@ dependencies = [
  "iliada-assistant",
  "iliada-bundle",
  "iliada-catalog",
+ "iliada-search",
  "iliada-store",
  "iliada-system",
  "iliada-types",

@@ -31,6 +31,7 @@ iliada-bundle.workspace = true
 iliada-types.workspace = true
 iliada-assistant.workspace = true
 iliada-account.workspace = true
+iliada-search.workspace = true
 iliada-store.workspace = true
 iliada-catalog.workspace = true
 reqwest.workspace = true

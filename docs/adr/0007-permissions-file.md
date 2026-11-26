@@ -108,6 +108,9 @@ file needs per-user brokers (later work).
   it.
 * Clipboard, screen capture and background running are visibly
   "not restricted yet" until the compositor and portals enforce them.
+  Sandboxed apps are already refused clipboard watching and screen
+  capture (their display socket). Clipboard history is held only by the
+  unsandboxed search service (Super+V) and is not a per-app grant.
 
 See also ADR 0008: Homer's use of other apps is gated by this
 file (`[homer]` and `controlled_by_homer`).

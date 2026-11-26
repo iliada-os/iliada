@@ -31,6 +31,35 @@ pub enum Request {
     /// Forget what was chosen (Settings → Privacy).
     Forget,
     Stats,
+    /// Clipboard history (Super+V), filtered by `query`.
+    Clipboard {
+        query: String,
+        limit: usize,
+    },
+    /// Pin, delete, copy and clear actions for one clipboard item.
+    ClipboardExtras {
+        id: u64,
+    },
+    ClipboardPin {
+        id: u64,
+        pinned: bool,
+    },
+    ClipboardDelete {
+        id: u64,
+    },
+    ClipboardClear,
+    /// Put this item back on the clipboard (the overlay then pastes).
+    ClipboardRestore {
+        id: u64,
+    },
+    ClipboardSetEnabled {
+        enabled: bool,
+    },
+    ClipboardExclude {
+        app: String,
+        exclude: bool,
+    },
+    ClipboardConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -52,6 +81,11 @@ pub enum Response {
     },
     Error {
         message: String,
+    },
+    /// Clipboard history settings.
+    ClipboardConfig {
+        enabled: bool,
+        exclude: Vec<String>,
     },
 }
 
@@ -88,6 +122,14 @@ impl Client {
     /// Results for `query`.
     pub fn search(&mut self, query: &str, homer: bool, limit: usize) -> Result<(Vec<Hit>, u64)> {
         match self.call(&Request::Search { query: query.to_owned(), homer, limit })? {
+            Response::Hits { hits, micros } => Ok((hits, micros)),
+            Response::Error { message } => bail!(message),
+            other => bail!("unexpected reply {other:?}"),
+        }
+    }
+
+    pub fn clipboard(&mut self, query: &str, limit: usize) -> Result<(Vec<Hit>, u64)> {
+        match self.call(&Request::Clipboard { query: query.to_owned(), limit })? {
             Response::Hits { hits, micros } => Ok((hits, micros)),
             Response::Error { message } => bail!(message),
             other => bail!("unexpected reply {other:?}"),

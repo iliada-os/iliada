@@ -29,7 +29,11 @@
   is found, or you ask a question or for a reminder, the search offers to
   ask Homer; **Super+O** asks Homer straight away. Results come from an
   index kept in memory: a few milliseconds per key, even with a million
-  files. **Super+V** is kept for clipboard history, coming next. Tiling's
+  files. **Super+V** opens clipboard history: the last 200 copies (text,
+  images and files), kept on this computer only and encrypted, with pin,
+  delete and a fuzzy filter; Enter pastes. Copies marked secret, and those
+  from apps you exclude in Settings → Privacy, are never saved. History can
+  be turned off there too. Tiling's
   "toggle orientation" moved to Super+Shift+O.
 - **A new Search icon** in the dock, a short bronze magnifier in the
   Spotlight style.

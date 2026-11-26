@@ -5,11 +5,12 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{Context, Result};
+use iliada_search::clipboard::Store;
 use iliada_search::files::{FileIndex, skipped};
 use iliada_search::proto::{Request, Response, socket_path};
 use iliada_search::usage::Usage;
@@ -33,7 +34,11 @@ fn apps_changed() -> Option<SystemTime> {
     apps::entry_dirs().iter().chain(bundle_dirs().iter()).filter_map(|d| d.metadata().ok()?.modified().ok()).max()
 }
 
-fn serve(engine: Arc<Engine>, stream: UnixStream) {
+fn clip(store: &Mutex<Store>) -> std::sync::MutexGuard<'_, Store> {
+    store.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn serve(engine: Arc<Engine>, store: Arc<Mutex<Store>>, stream: UnixStream) {
     let Ok(read) = stream.try_clone() else { return };
     let mut writer = stream;
     for line in BufReader::new(read).lines() {
@@ -70,6 +75,62 @@ fn serve(engine: Arc<Engine>, stream: UnixStream) {
                     memory: f.memory(),
                     indexing: engine.indexing.load(Ordering::Relaxed),
                 }
+            }
+            Ok(Request::Clipboard { query, limit }) => {
+                let t = Instant::now();
+                let hits = clip(&store).search(&query, limit);
+                Response::Hits { hits, micros: t.elapsed().as_micros() as u64 }
+            }
+            Ok(Request::ClipboardExtras { id }) => {
+                let t = Instant::now();
+                let hits = clip(&store).extras(id);
+                Response::Hits { hits, micros: t.elapsed().as_micros() as u64 }
+            }
+            Ok(Request::ClipboardPin { id, pinned }) => {
+                if clip(&store).pin(id, pinned) {
+                    Response::Done
+                } else {
+                    Response::Error { message: "that copy is no longer in the history".into() }
+                }
+            }
+            Ok(Request::ClipboardDelete { id }) => {
+                if clip(&store).delete(id) {
+                    Response::Done
+                } else {
+                    Response::Error { message: "that copy is no longer in the history".into() }
+                }
+            }
+            Ok(Request::ClipboardClear) => {
+                clip(&store).clear();
+                Response::Done
+            }
+            Ok(Request::ClipboardRestore { id }) => {
+                let guard = clip(&store);
+                match guard.get(id).cloned() {
+                    Some(item) => {
+                        let blob = guard.blob(&item);
+                        drop(guard);
+                        match iliada_search::clipboard::restore(&item, blob.as_deref()) {
+                            Ok(()) => Response::Done,
+                            Err(e) => Response::Error { message: format!("{e:#}") },
+                        }
+                    }
+                    None => Response::Error { message: "that copy is no longer in the history".into() },
+                }
+            }
+            Ok(Request::ClipboardSetEnabled { enabled }) => match clip(&store).set_enabled(enabled) {
+                Ok(()) => Response::Done,
+                Err(e) => Response::Error { message: format!("{e:#}") },
+            },
+            Ok(Request::ClipboardExclude { app, exclude }) => match clip(&store).set_excluded(&app, exclude) {
+                Ok(()) => Response::Done,
+                Err(e) => Response::Error { message: format!("{e:#}") },
+            },
+            Ok(Request::ClipboardConfig) => {
+                let mut s = clip(&store);
+                s.reload_config();
+                let c = s.config().clone();
+                Response::ClipboardConfig { enabled: c.enabled, exclude: c.exclude }
             }
             Err(e) => Response::Error { message: format!("bad request: {e}") },
         };
@@ -173,6 +234,29 @@ fn main() -> Result<()> {
     ));
     *engine.installed.write().unwrap_or_else(|e| e.into_inner()) = agora::installed(&bundle_dirs());
 
+    let store = match Store::default_paths() {
+        Some((dir, cfg)) => match Store::open(dir, cfg) {
+            Ok(s) => Arc::new(Mutex::new(s)),
+            Err(e) => {
+                tracing::warn!("clipboard history unavailable: {e:#}");
+                let tmp = std::env::temp_dir().join(format!("iliada-clipboard-{}", std::process::id()));
+                Arc::new(Mutex::new(Store::open(tmp, PathBuf::from("/dev/null")).expect("temp clipboard store")))
+            }
+        },
+        None => {
+            let tmp = std::env::temp_dir().join(format!("iliada-clipboard-{}", std::process::id()));
+            Arc::new(Mutex::new(Store::open(tmp, PathBuf::from("/dev/null")).expect("temp clipboard store")))
+        }
+    };
+    {
+        let store = store.clone();
+        std::thread::spawn(move || {
+            if let Err(e) = iliada_search::clipboard_watch::watch(store) {
+                tracing::warn!("not watching the clipboard: {e:#}");
+            }
+        });
+    }
+
     // Answer at once (apps, Settings and answers work while the home folder
     // is indexed).
     let _ = std::fs::remove_file(&sock);
@@ -249,8 +333,8 @@ fn main() -> Result<()> {
     for stream in listener.incoming() {
         match stream {
             Ok(s) => {
-                let engine = engine.clone();
-                std::thread::spawn(move || serve(engine, s));
+                let (engine, store) = (engine.clone(), store.clone());
+                std::thread::spawn(move || serve(engine, store, s));
             }
             Err(e) => tracing::warn!("accept: {e}"),
         }

@@ -60,7 +60,20 @@ pub fn perform(action: &Action) -> Result<()> {
         Action::Copy(text) => spawn(&["wl-copy".into(), "--".into(), text.clone()]),
         Action::AskHomer(text) => spawn(&homer_command(text)),
         Action::Appearance(dark) => set_dark(*dark),
+        Action::RestoreClipboard { id, paste } => restore_clipboard(*id, *paste),
+        Action::ClipboardPin { .. } | Action::ClipboardDelete(_) | Action::ClipboardClear => {
+            Ok(()) // the overlay talks to the search service for these
+        }
     }
+}
+
+fn restore_clipboard(id: u64, paste: bool) -> Result<()> {
+    let mut c = crate::proto::Client::connect().context("the search service is not running")?;
+    c.call(&crate::Request::ClipboardRestore { id }).context("putting the copy back on the clipboard")?;
+    if paste {
+        crate::clipboard::paste()?;
+    }
+    Ok(())
 }
 
 /// Homer's quick panel, asked `text` at once.

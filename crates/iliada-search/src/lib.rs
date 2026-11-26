@@ -14,6 +14,9 @@
 //! * **Answers**: arithmetic, units and dates ([`calc`]).
 //! * **Recent** files and what you open most ([`usage`], [`recent`]).
 //!
+//! * **Clipboard history** (Super+V): the last 200 copies, encrypted, skipping
+//!   secrets and excluded apps ([`clipboard`]).
+//!
 //! Prefixes: `>` runs a command in Terminal, `?` searches the web, `/` and
 //! `~/` browse paths. When nothing good is found and Homer is on, the last
 //! row asks Homer.
@@ -26,6 +29,8 @@ pub mod actions;
 pub mod agora;
 pub mod apps;
 pub mod calc;
+pub mod clipboard;
+pub mod clipboard_watch;
 pub mod engine;
 pub mod files;
 pub mod proto;
@@ -53,6 +58,7 @@ pub enum Kind {
     Homer,
     Web,
     Command,
+    Clipboard,
 }
 
 impl Kind {
@@ -69,6 +75,7 @@ impl Kind {
             Kind::Homer => "Homer",
             Kind::Web => "Web",
             Kind::Command => "Terminal",
+            Kind::Clipboard => "Clipboard",
         }
     }
 }
@@ -96,6 +103,14 @@ pub enum Action {
     AskHomer(String),
     /// Switch the desktop to dark (true) or light.
     Appearance(bool),
+    /// Put this clipboard-history item on the clipboard; paste if `paste`.
+    RestoreClipboard { id: u64, paste: bool },
+    /// Pin or unpin a clipboard-history item.
+    ClipboardPin { id: u64, pinned: bool },
+    /// Delete one clipboard-history item.
+    ClipboardDelete(u64),
+    /// Delete every clipboard-history item.
+    ClipboardClear,
 }
 
 /// One row of results.
@@ -114,11 +129,35 @@ pub struct Hit {
     /// Higher is better; only for ordering.
     #[serde(default)]
     pub score: i64,
+    /// Clipboard history item id (0: not one).
+    #[serde(default)]
+    pub clip_id: u64,
+    /// A pinned clipboard-history item stays when the list is full.
+    #[serde(default)]
+    pub pinned: bool,
+    /// When a clipboard item was copied, as seconds since the epoch (0: none).
+    #[serde(default)]
+    pub at: u64,
+    /// The app that copied a clipboard item, if known.
+    #[serde(default)]
+    pub source: String,
 }
 
 impl Hit {
     pub fn new(kind: Kind, title: impl Into<String>, action: Action) -> Self {
-        Hit { kind, title: title.into(), subtitle: String::new(), icon: None, action, key: String::new(), score: 0 }
+        Hit {
+            kind,
+            title: title.into(),
+            subtitle: String::new(),
+            icon: None,
+            action,
+            key: String::new(),
+            score: 0,
+            clip_id: 0,
+            pinned: false,
+            at: 0,
+            source: String::new(),
+        }
     }
     pub fn subtitle(mut self, s: impl Into<String>) -> Self {
         self.subtitle = s.into();
@@ -134,6 +173,14 @@ impl Hit {
     }
     pub fn score(mut self, score: i64) -> Self {
         self.score = score;
+        self
+    }
+    /// Fill in the clipboard-history fields for Super+V.
+    pub fn clip(mut self, id: u64, pinned: bool, at: u64, source: impl Into<String>) -> Self {
+        self.clip_id = id;
+        self.pinned = pinned;
+        self.at = at;
+        self.source = source.into();
         self
     }
     /// The path this result is, when it is a file or folder.
@@ -170,6 +217,14 @@ pub fn state_dir() -> Option<PathBuf> {
     std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
         .or_else(|| home().map(|h| h.join(".local/state")))
+        .map(|d| d.join("iliada"))
+}
+
+/// `$XDG_CONFIG_HOME/iliada`.
+pub fn config_dir() -> Option<PathBuf> {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| home().map(|h| h.join(".config")))
         .map(|d| d.join("iliada"))
 }
 

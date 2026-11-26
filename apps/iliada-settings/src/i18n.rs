@@ -170,6 +170,7 @@ mod tests {
             concat!(env!("CARGO_MANIFEST_DIR"), "/i18n"),
             concat!(env!("CARGO_MANIFEST_DIR"), "/../iliada-store-gui/i18n"),
             concat!(env!("CARGO_MANIFEST_DIR"), "/../iliada-installer/i18n"),
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../iliada-search-overlay/i18n"),
         ] {
             for entry in std::fs::read_dir(format!("{dir}/en")).unwrap() {
                 let name = entry.unwrap().file_name();

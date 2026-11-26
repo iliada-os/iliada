@@ -9,7 +9,7 @@
 //!
 //! * Super: search apps, files and folders, Settings, agora, answers.
 //! * Super+O: ask Homer.
-//! * Super+V: clipboard (history comes in a later version).
+//! * Super+V: clipboard history (the last 200 copies).
 //!
 //! Keys: ↑/↓ choose, Enter opens, Tab (or →) shows what else a file
 //! offers (Open With, Reveal in Files, Copy Path), Ctrl+Enter reveals a
@@ -33,6 +33,8 @@ use cosmic::widget;
 use cosmic::{Core, Element, executor};
 use iliada_search::proto::{Client, Request};
 use iliada_search::{Action, Hit, Icon, Kind, actions};
+
+mod i18n;
 
 /// Rows shown at most.
 const ROWS: usize = 9;
@@ -152,7 +154,8 @@ enum Message {
     Back,
     Hide,
     HomerOn(bool),
-    Clipboard(Option<String>),
+    /// After a restore, paste into the previous window (the overlay is gone).
+    Paste,
     Nothing,
 }
 
@@ -204,7 +207,33 @@ impl App {
                     vec![homer_off()]
                 };
             }
-            Mode::Clipboard => {}
+            Mode::Clipboard => match self.call(&Request::ClipboardConfig) {
+                Some(iliada_search::Response::ClipboardConfig { enabled: false, .. }) => {
+                    self.hits = vec![clipboard_off()];
+                    self.note = None;
+                }
+                _ => {
+                    let req = Request::Clipboard { query: self.query.clone(), limit: ROWS };
+                    match self.call(&req) {
+                        Some(iliada_search::Response::Hits { hits, micros }) => {
+                            self.hits = hits;
+                            self.micros = micros;
+                            self.note = if self.hits.is_empty() && self.query.is_empty() {
+                                Some(fl!("clipboard-empty-note"))
+                            } else {
+                                None
+                            };
+                            for h in &mut self.hits {
+                                h.subtitle = clipboard_subtitle(h);
+                            }
+                        }
+                        _ => {
+                            self.hits = Vec::new();
+                            self.note = Some(fl!("clipboard-unavailable"));
+                        }
+                    }
+                }
+            },
             Mode::Search => {
                 let req = Request::Search { query: self.query.clone(), homer: self.homer, limit: ROWS };
                 match self.call(&req) {
@@ -214,7 +243,7 @@ impl App {
                     }
                     _ => {
                         self.hits = Vec::new();
-                        self.note = Some("Search is starting. Try again in a moment.".into());
+                        self.note = Some(fl!("search-starting"));
                     }
                 }
             }
@@ -245,9 +274,6 @@ impl App {
             let on = iliada_system::client::status().await.map(|s| s.assistant.enabled).unwrap_or(false);
             Message::HomerOn(on)
         }));
-        if mode == Mode::Clipboard {
-            tasks.push(cosmic::iced::clipboard::read().map(|t| cosmic::Action::App(Message::Clipboard(t))));
-        }
         Task::batch(tasks)
     }
 
@@ -262,20 +288,58 @@ impl App {
         if !hit.key.is_empty() {
             let _ = self.call(&Request::Used { hit: hit.clone() });
         }
-        let copy = match &hit.action {
-            Action::Copy(text) => Some(text.clone()),
+        match &hit.action {
+            Action::ClipboardPin { id, pinned } => {
+                let _ = self.call(&Request::ClipboardPin { id: *id, pinned: *pinned });
+                self.refresh();
+                Task::none()
+            }
+            Action::ClipboardDelete(id) => {
+                let _ = self.call(&Request::ClipboardDelete { id: *id });
+                self.refresh();
+                Task::none()
+            }
+            Action::ClipboardClear => {
+                let _ = self.call(&Request::ClipboardClear);
+                self.refresh();
+                Task::none()
+            }
+            Action::RestoreClipboard { id, paste } => match self.call(&Request::ClipboardRestore { id: *id }) {
+                Some(iliada_search::Response::Error { message }) => {
+                    self.note = Some(message);
+                    Task::none()
+                }
+                Some(iliada_search::Response::Done) | Some(iliada_search::Response::Hits { .. }) => {
+                    let hide = self.hide();
+                    if *paste {
+                        Task::batch([
+                            hide,
+                            cosmic::task::future(async {
+                                tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+                                Message::Paste
+                            }),
+                        ])
+                    } else {
+                        hide
+                    }
+                }
+                _ => {
+                    self.note = Some(fl!("clipboard-unavailable"));
+                    Task::none()
+                }
+            },
+            Action::Copy(text) => {
+                let hide = self.hide();
+                Task::batch([cosmic::iced::clipboard::write(text.clone()), hide])
+            }
             other => {
                 if let Err(e) = actions::perform(other) {
                     self.note = Some(format!("{e:#}"));
-                    return Task::none();
+                    Task::none()
+                } else {
+                    self.hide()
                 }
-                None
             }
-        };
-        let hide = self.hide();
-        match copy {
-            Some(t) => Task::batch([cosmic::iced::clipboard::write(t), hide]),
-            None => hide,
         }
     }
 
@@ -295,10 +359,11 @@ impl App {
             .push(text.width(Length::Fill))
             .spacing(spacing.space_s)
             .align_y(Alignment::Center);
-        if i == self.selected && hit.path().is_some() && self.extras_of.is_none() {
-            row = row.push(widget::text::caption("Tab for more"));
+        let more = hit.path().is_some() || (self.mode == Mode::Clipboard && hit.clip_id != 0);
+        if i == self.selected && more && self.extras_of.is_none() {
+            row = row.push(widget::text::caption(fl!("tab-for-more")));
         }
-        row = row.push(widget::text::caption(hit.kind.label()));
+        row = row.push(widget::text::caption(i18n::kind_label(hit.kind)));
         let selected = i == self.selected;
         let content = widget::container(row)
             .padding([spacing.space_xxs, spacing.space_s])
@@ -310,9 +375,9 @@ impl App {
     fn panel(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
         let (icon, placeholder) = match self.mode {
-            Mode::Search => ("system-search-symbolic", "Search apps, files, settings… or ask Homer"),
-            Mode::Homer => ("org.iliada.Assistant", "Ask Homer…"),
-            Mode::Clipboard => ("edit-paste-symbolic", "Clipboard"),
+            Mode::Search => ("system-search-symbolic", fl!("search-placeholder")),
+            Mode::Homer => ("org.iliada.Assistant", fl!("homer-placeholder")),
+            Mode::Clipboard => ("edit-paste-symbolic", fl!("clipboard-placeholder")),
         };
         let field = widget::text_input(placeholder, &self.query)
             .id(self.field.clone())
@@ -337,13 +402,11 @@ impl App {
             col = col.push(self.row(i, h));
         }
         let hint = match (&self.extras_of, self.mode) {
-            (Some(_), _) => "Enter to choose · Esc to go back".to_owned(),
-            (None, Mode::Homer) => "Enter to ask · Esc to close".to_owned(),
-            (None, Mode::Clipboard) => "Clipboard history is coming in the next update · Esc to close".to_owned(),
-            (None, Mode::Search) if self.query.is_empty() => {
-                "Type to search · > runs a command · ? searches the web · ~/ browses folders".to_owned()
-            }
-            (None, Mode::Search) => format!("Enter to open · Tab for more · {:.1} ms", self.micros as f64 / 1000.0),
+            (Some(_), _) => fl!("hint-extras"),
+            (None, Mode::Homer) => fl!("hint-homer"),
+            (None, Mode::Clipboard) => fl!("hint-clipboard"),
+            (None, Mode::Search) if self.query.is_empty() => fl!("hint-search-empty"),
+            (None, Mode::Search) => fl!("hint-search", ms = format!("{:.1}", self.micros as f64 / 1000.0)),
         };
         col = col.push(widget::text::caption(hint));
         let panel = widget::container(col.padding(spacing.space_s))
@@ -362,9 +425,38 @@ impl App {
 }
 
 fn homer_off() -> Hit {
-    Hit::new(Kind::Homer, "Homer is off", Action::Run(vec!["cosmic-settings".into(), "iliada".into(), "homer".into()]))
-        .subtitle("Turn him on in Settings → Homer")
-        .icon_name("org.iliada.Assistant")
+    Hit::new(
+        Kind::Homer,
+        fl!("homer-off-title"),
+        Action::Run(vec!["cosmic-settings".into(), "iliada".into(), "homer".into()]),
+    )
+    .subtitle(fl!("homer-off-subtitle"))
+    .icon_name("org.iliada.Assistant")
+}
+
+fn clipboard_off() -> Hit {
+    Hit::new(
+        Kind::Clipboard,
+        fl!("clipboard-off-title"),
+        Action::Run(vec!["cosmic-settings".into(), "iliada".into(), "privacy".into()]),
+    )
+    .subtitle(fl!("clipboard-off-subtitle"))
+    .icon_name("edit-paste-symbolic")
+}
+
+fn clipboard_subtitle(hit: &Hit) -> String {
+    let mut parts = Vec::new();
+    if hit.pinned {
+        parts.push(fl!("pinned"));
+    }
+    let ago = i18n::ago(hit.at);
+    if !ago.is_empty() {
+        parts.push(ago);
+    }
+    if !hit.source.is_empty() {
+        parts.push(fl!("from-app", app = hit.source.as_str()));
+    }
+    parts.join(", ")
 }
 
 fn frosted(theme: &cosmic::Theme) -> widget::container::Style {
@@ -496,10 +588,15 @@ impl cosmic::Application for App {
                 if self.extras_of.is_some() {
                     return Task::none();
                 }
-                let Some(path) = self.hits.get(self.selected).and_then(Hit::path).map(|p| p.to_owned()) else {
-                    return Task::none();
+                let hit = self.hits.get(self.selected).cloned();
+                let extras = if let Some(path) = hit.as_ref().and_then(Hit::path).map(|p| p.to_owned()) {
+                    self.call(&Request::OpenWith { path })
+                } else if let Some(id) = hit.as_ref().map(|h| h.clip_id).filter(|id| *id != 0) {
+                    self.call(&Request::ClipboardExtras { id })
+                } else {
+                    None
                 };
-                if let Some(iliada_search::Response::Hits { hits, .. }) = self.call(&Request::OpenWith { path }) {
+                if let Some(iliada_search::Response::Hits { hits, .. }) = extras {
                     let before = std::mem::replace(&mut self.hits, hits);
                     self.extras_of = Some((before, self.selected));
                     self.selected = 0;
@@ -522,20 +619,8 @@ impl cosmic::Application for App {
                     }
                 }
             }
-            Message::Clipboard(text) => {
-                if self.mode == Mode::Clipboard {
-                    self.hits = match text.filter(|t| !t.trim().is_empty()) {
-                        Some(t) => {
-                            let shown: String = t.chars().take(200).collect();
-                            vec![
-                                Hit::new(Kind::Answer, shown.replace('\n', " "), Action::Copy(t))
-                                    .subtitle("On the clipboard now")
-                                    .icon_name("edit-paste-symbolic"),
-                            ]
-                        }
-                        None => Vec::new(),
-                    };
-                }
+            Message::Paste => {
+                let _ = iliada_search::clipboard::paste();
             }
             Message::Nothing => {}
         }

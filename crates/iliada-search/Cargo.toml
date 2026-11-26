@@ -34,6 +34,12 @@ ignore = "0.4"
 # Following changes to the home folder (inotify).
 notify = { version = "8", default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+toml.workspace = true
+chacha20poly1305 = "0.10"
+getrandom = "0.3"
+# Clipboard watching (data-control); only the unsandboxed search service uses this.
+wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -274,6 +274,10 @@ pub enum Message {
     KeepHistory(bool),
     ClearHistory,
     ClearHistoryConfirmed,
+    ClipHistory(bool),
+    ClipExclude(String, bool),
+    ClipClear,
+    ClipClearConfirmed,
     /// Log out (to see a new language).
     LogOut,
     /// COSMIC Settings' keyboard page (layouts, shortcuts).
@@ -315,6 +319,10 @@ pub struct Panel {
     keep_history: bool,
     /// "Delete all of Homer's conversations?" is showing.
     confirm_clear_history: bool,
+    /// Clipboard history (Super+V), Settings → Privacy.
+    clip_enabled: bool,
+    clip_exclude: Vec<String>,
+    confirm_clear_clipboard: bool,
 }
 
 fn load_status() -> Task<Message> {
@@ -664,6 +672,7 @@ impl Panel {
 
     fn privacy(&self) -> Element<'_, Message> {
         let mut items: Vec<Element<_>> = vec![info(fl!("privacy-intro-title"), Some(fl!("privacy-intro")))];
+        items.push(self.clipboard_section());
         let by = |label: String, v: PrivacyBy| {
             if self.privacy_by == v {
                 widget::button::suggested(label).on_press(Message::PrivacyBy(v))
@@ -765,10 +774,7 @@ impl Panel {
         if !open.is_empty() {
             let names: Vec<&str> = open.iter().map(|a| a.name.as_str()).collect();
             let mut section = settings::section().title(fl!("not-sandboxed"));
-            section = section.add(info(
-                fl!("not-sandboxed"),
-                Some(fl!("not-sandboxed-list", list = names.join(", "))),
-            ));
+            section = section.add(info(fl!("not-sandboxed"), Some(fl!("not-sandboxed-list", list = names.join(", ")))));
             section = section.add(info(fl!("not-sandboxed-homer"), None));
             for app in &open {
                 let r = self.policy.report(app);
@@ -808,7 +814,7 @@ impl Panel {
                 modes = modes.add(info(fl!("use-other-apps"), Some(fl!("use-other-apps-off-by-admin"))));
             } else {
                 let on = self.policy.homer_enabled();
-                let set = ok.then_some(|on| Message::HomerApps(on));
+                let set = ok.then_some(Message::HomerApps);
                 modes = modes.add(
                     settings::item::builder(fl!("use-other-apps"))
                         .description(fl!("use-other-apps-desc"))
@@ -909,6 +915,47 @@ impl Panel {
         section = section
             .add(settings::item::builder(fl!("clear-history")).description(fl!("clear-history-desc")).control(clear));
         section.into()
+    }
+
+    fn clipboard_section(&self) -> Element<'_, Message> {
+        let space = cosmic::theme::spacing();
+        let mut section = settings::section().title(fl!("clipboard-history")).add(
+            settings::item::builder(fl!("clipboard-history"))
+                .description(if self.clip_enabled { fl!("clipboard-history-on") } else { fl!("clipboard-history-off") })
+                .toggler(self.clip_enabled, Message::ClipHistory),
+        );
+        section = section.add(info(fl!("clipboard-history"), Some(fl!("clipboard-history-desc"))));
+        let clear: Element<_> = if self.confirm_clear_clipboard {
+            widget::row::with_capacity(2)
+                .push(widget::button::standard(fl!("cancel")).on_press(Message::Cancel))
+                .push(widget::button::destructive(fl!("delete-all")).on_press(Message::ClipClearConfirmed))
+                .spacing(space.space_xs)
+                .into()
+        } else {
+            widget::button::standard(fl!("clipboard-history-clear-ellipsis")).on_press(Message::ClipClear).into()
+        };
+        section = section.add(
+            settings::item::builder(fl!("clipboard-history-clear"))
+                .description(fl!("clipboard-history-clear-desc"))
+                .control(clear),
+        );
+        section = section.add(info(fl!("clipboard-exclude"), Some(fl!("clipboard-exclude-desc"))));
+        for app in &self.programs {
+            let id = app.id.clone();
+            let on = self.clip_exclude.iter().any(|e| clip_excludes(e, &app.id));
+            section = section.add(
+                settings::item::builder(app.name.clone())
+                    .description(app.id.clone())
+                    .toggler(on, move |v| Message::ClipExclude(id.clone(), v)),
+            );
+        }
+        section.into()
+    }
+
+    fn load_clipboard(&mut self) {
+        let (enabled, exclude) = load_clipboard_settings();
+        self.clip_enabled = enabled;
+        self.clip_exclude = exclude;
     }
 
     /// The API key for the chosen model's provider: whether one is saved,
@@ -1174,6 +1221,9 @@ impl Panel {
             account: Account::default(),
             keep_history: iliada_assistant::history::history_enabled(),
             confirm_clear_history: false,
+            clip_enabled: true,
+            clip_exclude: Vec::new(),
+            confirm_clear_clipboard: false,
         }
     }
 
@@ -1200,6 +1250,7 @@ impl Panel {
         if self.page() == Page::Privacy {
             self.extra_isolation = load_extra_isolation();
             self.load_permissions();
+            self.load_clipboard();
         }
         load_status()
     }
@@ -1457,6 +1508,7 @@ impl Panel {
             Message::Cancel => {
                 self.confirm = None;
                 self.confirm_clear_history = false;
+                self.confirm_clear_clipboard = false;
             }
             Message::Confirmed => {
                 return match self.confirm.take() {
@@ -1517,6 +1569,30 @@ impl Panel {
             Message::OpenReport => {
                 if let Some(Some(Ok(path))) = &self.report {
                     let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+                }
+            }
+            Message::ClipHistory(on) => match set_clipboard_enabled(on) {
+                Ok(()) => self.clip_enabled = on,
+                Err(e) => self.error = Some(fl!("clipboard-history-setting-failed", error = format!("{e:#}"))),
+            },
+            Message::ClipExclude(app, on) => match set_clipboard_excluded(&app, on) {
+                Ok(()) => {
+                    if on {
+                        if !self.clip_exclude.iter().any(|e| clip_excludes(e, &app)) {
+                            self.clip_exclude.push(app);
+                        }
+                    } else {
+                        self.clip_exclude.retain(|e| !clip_excludes(e, &app));
+                    }
+                }
+                Err(e) => self.error = Some(fl!("clipboard-history-setting-failed", error = format!("{e:#}"))),
+            },
+            Message::ClipClear => self.confirm_clear_clipboard = true,
+            Message::ClipClearConfirmed => {
+                self.confirm_clear_clipboard = false;
+                match clear_clipboard_history() {
+                    Ok(()) => self.notice = Some(fl!("clipboard-history-cleared")),
+                    Err(e) => self.error = Some(fl!("clipboard-history-clear-failed", error = format!("{e:#}"))),
                 }
             }
             Message::KeepHistory(on) => match iliada_assistant::history::set_history_enabled(on) {
@@ -1619,6 +1695,74 @@ fn account_action(m: account::Msg) -> cosmic::Action<Message> {
 /// A single argument `iliada-updates` is refused (0.2.6).
 pub fn cosmic_settings_args(page: Page) -> [&'static str; 2] {
     ["iliada", page.id()]
+}
+
+fn clip_excludes(listed: &str, app: &str) -> bool {
+    iliada_search::clipboard::Config { enabled: true, exclude: vec![listed.to_owned()] }.excludes(app)
+}
+
+fn clipboard_config_path() -> Option<std::path::PathBuf> {
+    iliada_search::config_dir().map(|d| d.join("clipboard.toml"))
+}
+
+fn load_clipboard_settings() -> (bool, Vec<String>) {
+    use iliada_search::proto::{Client, Request, Response};
+    if let Ok(mut c) = Client::connect()
+        && let Ok(Response::ClipboardConfig { enabled, exclude }) = c.call(&Request::ClipboardConfig)
+    {
+        return (enabled, exclude);
+    }
+    let cfg = clipboard_config_path().map(|p| iliada_search::clipboard::Config::load(&p)).unwrap_or_default();
+    (cfg.enabled, cfg.exclude)
+}
+
+fn set_clipboard_enabled(on: bool) -> anyhow::Result<()> {
+    use iliada_search::proto::{Client, Request, Response};
+    if let Ok(mut c) = Client::connect() {
+        match c.call(&Request::ClipboardSetEnabled { enabled: on })? {
+            Response::Error { message } => anyhow::bail!(message),
+            _ => return Ok(()),
+        }
+    }
+    let path = clipboard_config_path().ok_or_else(|| anyhow::anyhow!("HOME is not set"))?;
+    let mut cfg = iliada_search::clipboard::Config::load(&path);
+    cfg.enabled = on;
+    cfg.save(&path)
+}
+
+fn set_clipboard_excluded(app: &str, exclude: bool) -> anyhow::Result<()> {
+    use iliada_search::proto::{Client, Request, Response};
+    if let Ok(mut c) = Client::connect() {
+        match c.call(&Request::ClipboardExclude { app: app.to_owned(), exclude })? {
+            Response::Error { message } => anyhow::bail!(message),
+            _ => return Ok(()),
+        }
+    }
+    let path = clipboard_config_path().ok_or_else(|| anyhow::anyhow!("HOME is not set"))?;
+    let mut cfg = iliada_search::clipboard::Config::load(&path);
+    if exclude {
+        if !cfg.excludes(app) {
+            cfg.exclude.push(app.to_owned());
+        }
+    } else {
+        cfg.exclude.retain(|e| !clip_excludes(e, app));
+    }
+    cfg.save(&path)
+}
+
+fn clear_clipboard_history() -> anyhow::Result<()> {
+    use iliada_search::proto::{Client, Request, Response};
+    if let Ok(mut c) = Client::connect() {
+        match c.call(&Request::ClipboardClear)? {
+            Response::Error { message } => anyhow::bail!(message),
+            _ => return Ok(()),
+        }
+    }
+    if let Some((dir, cfg)) = iliada_search::clipboard::Store::default_paths() {
+        let mut store = iliada_search::clipboard::Store::open(dir, cfg)?;
+        store.clear();
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -63,7 +63,7 @@ widen. Change it with `iliada permissions limit <app|all> <capability>
 | `camera` | allow, deny, ask | decided (default ask) |
 | `microphone` | allow, deny, ask | decided (default ask) |
 | `sound` | allow, deny | decided (default allow) |
-| `screen_capture`, `clipboard.read`, `clipboard.write`, `background` | none | not restricted yet: always `unrestricted` |
+| `screen_capture`, `clipboard.read`, `clipboard.write`, `background` | none | not restricted yet: always `unrestricted` for the current clipboard and the screen. Sandboxed apps still cannot watch the clipboard or the screen (their display socket is refused those protocols). Clipboard history (Super+V) lives in the unsandboxed search service and is not readable by sandboxed apps. |
 | `notifications`, `location`, `autostart`, `devices.usb`, `devices.bluetooth`, `system_changes`, `other_apps` | none | never: always `deny` |
 | `controlled_by_homer` | allow, deny, ask | decided (default ask), for every app, including built-in ones: whether Homer may use it |
 

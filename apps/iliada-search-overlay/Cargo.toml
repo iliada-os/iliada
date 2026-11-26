@@ -14,3 +14,6 @@ iliada-search = { path = "../../crates/iliada-search" }
 iliada-system.workspace = true
 tokio.workspace = true
 libcosmic.workspace = true
+i18n-embed.workspace = true
+i18n-embed-fl.workspace = true
+rust-embed.workspace = true

@@ -89,6 +89,10 @@ pub fn file_hit(path: &Path, dir: bool) -> Hit {
         action: Action::Open(path.to_owned()),
         key: format!("file:{}", path.display()),
         score: 0,
+        clip_id: 0,
+        pinned: false,
+        at: 0,
+        source: String::new(),
     }
 }
 

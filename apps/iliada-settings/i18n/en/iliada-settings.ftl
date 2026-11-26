@@ -209,6 +209,19 @@ reset-permissions-body = Your answers are forgotten and every app asks again the
 permissions-reset = Every app asks again the next time it opens.
 permissions-reset-failed = Could not reset: { $error }
 
+clipboard-history = Clipboard history
+clipboard-history-desc = Super+V shows the last 200 things you copied: text, images and files. They stay on this computer, encrypted. Passwords marked secret are never saved, and sandboxed apps cannot read the history.
+clipboard-history-on = Super+V shows what you have copied.
+clipboard-history-off = Super+V will not keep what you copy.
+clipboard-history-clear = Clear clipboard history
+clipboard-history-clear-desc = Deletes every saved copy, including pinned ones.
+clipboard-history-clear-ellipsis = Clear History…
+clipboard-history-cleared = Clipboard history is empty.
+clipboard-history-clear-failed = Couldn't clear clipboard history: { $error }
+clipboard-history-setting-failed = Couldn't change clipboard history: { $error }
+clipboard-exclude = Don't save copies from these apps
+clipboard-exclude-desc = Useful for password managers and banking apps. Copies marked secret are always skipped, even from apps that are not listed.
+
 ## Homer
 
 history = History

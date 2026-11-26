@@ -124,14 +124,15 @@ in
     # show it (iliada-search starts it if it is not running).
     environment.etc."xdg/autostart/org.iliada.SearchOverlay.desktop".source =
       ../../apps/iliada-search-overlay/res/org.iliada.SearchOverlay-autostart.desktop;
-    # The search service: the home folder's index, in memory, kept current.
+    # The search service: the home folder's index, in memory, kept current,
+    # and clipboard history (data-control, which sandboxed apps are refused).
     systemd.user.services.iliada-searchd = {
-      description = "Iliada search: the index of apps, files and settings";
+      description = "Iliada search: the index of apps, files, settings and clipboard history";
       wantedBy = [ "default.target" ];
       # Desktop entries are found as in the session (systemd's user
       # manager has no XDG_DATA_DIRS of its own).
       environment.XDG_DATA_DIRS = "%h/.local/share:%h/.nix-profile/share:/etc/profiles/per-user/%u/share:/run/current-system/sw/share:/var/lib/iliada-desktop";
-      path = [ pkgs.xdg-utils ];
+      path = [ pkgs.xdg-utils pkgs.wl-clipboard pkgs.wtype pkgs.lswt ];
       serviceConfig = {
         ExecStart = "${config.iliada.package}/bin/iliada-searchd";
         Restart = "on-failure";
@@ -156,6 +157,10 @@ in
     environment.systemPackages = [
       # Notifications from scripts and the Setup Assistant's background installs.
       pkgs.libnotify
+      # Clipboard history (Super+V) and Homer's typing and window list.
+      pkgs.wl-clipboard
+      pkgs.wtype
+      pkgs.lswt
       # Filtered accessibility bus for sandboxed apps (Homer's app control).
       pkgs.xdg-dbus-proxy
       # agora, Iliada Settings and the Setup Assistant.
@@ -249,7 +254,7 @@ in
         EOF
         # Iliada's search (Spotlight for Iliada) in place of COSMIC's
         # launcher: Super shows it, Super+O asks Homer, Super+V is the
-        # clipboard, Super+Escape stops Homer in an app. Tiling's "toggle orientation" moves from Super+O to
+        # clipboard history, Super+Escape stops Homer in an app. Tiling's "toggle orientation" moves from Super+O to
         # Super+Shift+O. Alt+Space still opens Homer's quick panel
         # (Super+Space stays the keyboard-layout switch). The dock's Search
         # button runs the launcher's desktop entry, replaced below.

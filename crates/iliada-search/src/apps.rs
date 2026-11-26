@@ -32,6 +32,10 @@ impl App {
             action: Action::Run(self.exec.clone()),
             key: format!("app:{}", self.id),
             score: 0,
+            clip_id: 0,
+            pinned: false,
+            at: 0,
+            source: String::new(),
         }
     }
 }
