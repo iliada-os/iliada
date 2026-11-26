@@ -112,6 +112,10 @@ pub enum Action {
     ClipboardDelete(u64),
     /// Delete every clipboard-history item.
     ClipboardClear,
+    /// Move this file: the overlay asks for a folder.
+    MoveTo(PathBuf),
+    /// Open each of these files with its default app.
+    OpenAll(Vec<PathBuf>),
 }
 
 /// One row of results.

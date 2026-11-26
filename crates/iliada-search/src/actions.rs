@@ -1,7 +1,7 @@
 //! Doing what a result says, and the extra things a file result offers
-//! (Reveal in Files, Copy Path, Open With).
+//! (Reveal in Files, Copy Path, Open With, Move to).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
@@ -56,13 +56,22 @@ pub fn perform(action: &Action) -> Result<()> {
     match action {
         Action::Run(argv) => spawn(argv),
         Action::Open(path) => spawn(&open_command(path)),
+        Action::OpenAll(paths) => {
+            let mut first_err = None;
+            for path in paths {
+                if let Err(e) = spawn(&open_command(path)) {
+                    first_err = first_err.or(Some(e));
+                }
+            }
+            first_err.map_or(Ok(()), Err)
+        }
         Action::Url(url) => spawn(&["xdg-open".into(), url.clone()]),
         Action::Copy(text) => spawn(&["wl-copy".into(), "--".into(), text.clone()]),
         Action::AskHomer(text) => spawn(&homer_command(text)),
         Action::Appearance(dark) => set_dark(*dark),
         Action::RestoreClipboard { id, paste } => restore_clipboard(*id, *paste),
-        Action::ClipboardPin { .. } | Action::ClipboardDelete(_) | Action::ClipboardClear => {
-            Ok(()) // the overlay talks to the search service for these
+        Action::ClipboardPin { .. } | Action::ClipboardDelete(_) | Action::ClipboardClear | Action::MoveTo(_) => {
+            Ok(()) // the overlay talks to the search service, or handles these itself
         }
     }
 }
@@ -124,10 +133,81 @@ pub fn extras(hit: &Hit) -> Vec<Hit> {
         );
     }
     v.push(
+        Hit::new(Kind::Action, "Move to", Action::MoveTo(path.to_owned()))
+            .subtitle("Choose a folder")
+            .icon_name("folder-symbolic"),
+    );
+    v.push(
         Hit::new(Kind::Action, "Ask Homer About It", Action::AskHomer(format!("About the file {p}: ")))
             .icon_name("org.iliada.Assistant"),
     );
     v
+}
+
+/// Move `src` into `dest_dir`, keeping its name.
+pub fn move_into(src: &Path, dest_dir: &Path) -> Result<PathBuf> {
+    anyhow::ensure!(dest_dir.is_dir(), "{} is not a folder", dest_dir.display());
+    let name = src.file_name().context("the path has no file name")?;
+    let dest = dest_dir.join(name);
+    anyhow::ensure!(!dest.exists(), "{} already exists", dest.display());
+    std::fs::rename(src, &dest).with_context(|| format!("moving {} to {}", src.display(), dest.display()))?;
+    Ok(dest)
+}
+
+/// Paths from a `text/uri-list` drop (or a plain path). Comments and empty
+/// lines are ignored. `file://` URLs are decoded.
+pub fn parse_uri_list(data: &[u8]) -> Vec<PathBuf> {
+    let text = String::from_utf8_lossy(data);
+    text.lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .filter_map(|l| {
+            let s = l.strip_prefix("file://").unwrap_or(l);
+            let decoded = decode_url(s);
+            if decoded.is_empty() { None } else { Some(PathBuf::from(decoded)) }
+        })
+        .collect()
+}
+
+fn decode_url(s: &str) -> String {
+    let mut out = Vec::with_capacity(s.len());
+    let b = s.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let Ok(v) = u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or(""), 16)
+        {
+            out.push(v);
+            i += 3;
+            continue;
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn file_url(path: &Path) -> String {
+    let s = path.display().to_string();
+    let mut out = String::from("file://");
+    for b in s.bytes() {
+        if should_percent_encode(b) {
+            out.push_str(&format!("%{b:02X}"));
+        } else {
+            out.push(b as char);
+        }
+    }
+    out
+}
+
+fn should_percent_encode(b: u8) -> bool {
+    matches!(b, b'%' | b' ' | b'#' | b'?' | 0..=0x1f | 0x7f..=0xff)
+}
+
+/// The `text/uri-list` body for these paths (for dragging out of Search).
+pub fn uri_list(paths: &[PathBuf]) -> String {
+    paths.iter().map(|p| file_url(p)).collect::<Vec<_>>().join("\r\n")
 }
 
 #[cfg(test)]
@@ -149,7 +229,33 @@ mod tests {
     fn file_extras() {
         let h = Hit::new(Kind::File, "x.pdf", Action::Open(PathBuf::from("/home/a/Docs/x.pdf")));
         let titles: Vec<_> = extras(&h).into_iter().map(|h| h.title).collect();
-        assert_eq!(titles, vec!["Open", "Reveal in Files", "Copy Path", "Ask Homer About It"]);
+        assert_eq!(titles, vec!["Open", "Reveal in Files", "Copy Path", "Move to", "Ask Homer About It"]);
         assert!(extras(&Hit::new(Kind::Answer, "= 4", Action::Copy("4".into()))).is_empty());
+    }
+
+    #[test]
+    fn uri_lists_become_paths() {
+        let data = b"# comment\r\nfile:///home/a/Notes.txt\r\nfile:///tmp/b%20c.png\n/absolute/plain\n";
+        assert_eq!(
+            parse_uri_list(data),
+            [PathBuf::from("/home/a/Notes.txt"), PathBuf::from("/tmp/b c.png"), PathBuf::from("/absolute/plain")]
+        );
+        assert!(parse_uri_list(b"").is_empty());
+        let round = parse_uri_list(uri_list(&[PathBuf::from("/tmp/b c.png")]).as_bytes());
+        assert_eq!(round, [PathBuf::from("/tmp/b c.png")]);
+    }
+
+    #[test]
+    fn move_into_a_folder() {
+        let root = std::env::temp_dir().join(format!("iliada-move-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("dest")).unwrap();
+        let src = root.join("note.txt");
+        std::fs::write(&src, "hi").unwrap();
+        let dest = move_into(&src, &root.join("dest")).unwrap();
+        assert_eq!(dest, root.join("dest/note.txt"));
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "hi");
+        assert!(!src.exists());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
