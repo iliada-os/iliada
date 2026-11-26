@@ -13,6 +13,10 @@ Both come from the same code (`iliada_bundle::policy`), so they agree.
 ```toml
 version = 1
 
+[homer]
+control = true          # Settings > Homer > Use other apps
+screen = "ask"          # screenshots and the virtual mouse and keyboard; allow | deny | ask
+
 [apps."org.gimp.GIMP"]
 name = "GIMP"
 source = "agora"
@@ -30,6 +34,7 @@ notifications       = "deny"           # fixed; there is no notification service
 name = "Terminal"
 source = "built-in"
 all = "unrestricted"  # runs as you, outside any sandbox: it can do whatever you can
+controlled_by_homer = "ask"  # allow | deny | ask; decided even for built-in programs
 ```
 
 Only the capability values are read back; `name`, `source`, `isolation`,
@@ -60,9 +65,15 @@ widen. Change it with `iliada permissions limit <app|all> <capability>
 | `sound` | allow, deny | decided (default allow) |
 | `screen_capture`, `clipboard.read`, `clipboard.write`, `background` | none | not restricted yet: always `unrestricted` |
 | `notifications`, `location`, `autostart`, `devices.usb`, `devices.bluetooth`, `system_changes`, `other_apps` | none | never: always `deny` |
+| `controlled_by_homer` | allow, deny, ask | decided (default ask), for every app, including built-in ones: whether Homer may use it |
 
 An app only gets a decided capability its recipe declares; otherwise it is
-`not-requested`.
+`not-requested`. `controlled_by_homer` is the exception: it is about Homer,
+not a request from the app, so it is always decided.
+
+The `[homer]` table is the global switch (`control`) and the whole-screen
+grant (`screen`). `/etc/iliada/permissions.toml` can only set `control =
+false` or `controlled_by_homer = "deny"` (or `screen = "deny"`).
 
 ## JSON
 

@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Homer can use your other apps**, without any extra setup. He reads
+  and presses the controls of apps that describe themselves, takes a
+  screenshot and moves a pointer and keyboard when they do not, and has
+  his own Chrome window (a private pipe, never a port) for the web and
+  Google Docs. Apps can also declare exact actions (new note, search in
+  agora, and others for Iliada's own apps). A banner says "Homer is
+  controlling …" while he works, **Super+Escape** or Stop ends it, and he
+  asks before sending, deleting, posting or paying. What he reads in apps
+  and pages is treated as data, never as instructions, and every action
+  is logged. **Settings → Homer → Use other apps** is the global switch;
+  each app has **Homer may control** in the permissions file
+  (`~/.config/iliada/permissions.toml`), in Settings → Privacy, and
+  through `iliada-control`. An administrator can switch it off for
+  everyone. Apps without accessibility fall back to the screen; apps
+  Homer must never see (permission prompts, password windows, Settings)
+  are blocked.
+
 - **Search, like Spotlight**: press Super and type. Apps, files and
   folders in your home, Settings pages, quick actions (dark mode, lock,
   Wi-Fi, restart…) and agora apps you have not installed yet, ranked by

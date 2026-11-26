@@ -16,6 +16,7 @@
 //! every OS; actually launching requires Linux (KVM / user namespaces) and is
 //! exercised in the Linux CI job and the dev VM.
 
+pub mod a11y;
 pub mod cloud_hypervisor;
 pub mod host;
 pub mod namespace;
@@ -76,6 +77,9 @@ pub struct Grants {
     pub camera: bool,
     /// The sound server's sockets (PipeWire and its PulseAudio server).
     pub sound: Option<SoundSockets>,
+    /// A filtered proxy to the accessibility bus (`a11y.rs`): screen
+    /// readers and Homer can read the app's controls.
+    pub a11y: Option<PathBuf>,
 }
 
 /// The user's sound server sockets, as found on the host.

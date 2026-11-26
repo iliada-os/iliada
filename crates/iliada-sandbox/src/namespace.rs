@@ -177,6 +177,14 @@ fn bwrap_prefix(spec: &SandboxSpec, host: &HostIsolationConfig, desktop: &HostDe
             push(&["--setenv", "PULSE_SERVER", &format!("unix:{guest}")]);
         }
     }
+    if spec.display.is_some()
+        && let Some(bus) = &spec.grants.a11y
+    {
+        push(&["--ro-bind", &p(bus), crate::a11y::GUEST_SOCKET]);
+        for (k, v) in crate::a11y::env() {
+            push(&["--setenv", &k, &v]);
+        }
+    }
     // Files opened with the app: exactly those, at their own paths.
     for f in &spec.files {
         let source = spec.file_sources.get(f).unwrap_or(f);
@@ -424,6 +432,16 @@ mod tests {
         let a = bwrap_args(&spec, &HostIsolationConfig::example(), &HostDesktop::default());
         assert_eq!(after(&a, "--ro-bind", "/home/alex/Music"), Some("/home/app/Music"));
         assert_eq!(after(&a, "--bind", "/home/alex/Music"), None);
+    }
+
+    #[test]
+    fn the_accessibility_proxy_is_the_only_bus() {
+        let (_t, mut spec) = fixture(NetworkPolicy::None, true);
+        spec.grants.a11y = Some("/run/user/1000/iliada/a11y/x.sock".into());
+        let a = bwrap_args(&spec, &HostIsolationConfig::example(), &HostDesktop::default());
+        assert_eq!(after(&a, "--ro-bind", "/run/user/1000/iliada/a11y/x.sock"), Some("/run/user/app/at-spi/bus"));
+        assert_eq!(after(&a, "--setenv", "AT_SPI_BUS_ADDRESS"), Some("unix:path=/run/user/app/at-spi/bus"));
+        assert!(!a.iter().any(|x| x.contains("/run/user/1000/bus")), "no host D-Bus session bus");
     }
 
     #[test]

@@ -1,0 +1,13 @@
+# Homer's intents for Files (COSMIC Files). Format: docs/app-intents.md.
+app = "com.system76.CosmicFiles"
+name = "Files"
+
+[[intent]]
+name = "open_folder"
+title = "Open a folder"
+description = "Shows a folder of the person's in a Files window."
+run = ["cosmic-files", "{folder}"]
+[intent.params.folder]
+type = "path"
+description = "The folder, like ~/Documents"
+required = true

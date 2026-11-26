@@ -248,6 +248,7 @@ pub enum Message {
     Backups(Result<Vec<Backup>, String>),
     Ask(Confirm),
     Permission(String, Key, Value),
+    HomerApps(bool),
     PrivacyBy(PrivacyBy),
     OpenPermissionsFile,
     ExtraIsolation(String, bool),
@@ -760,9 +761,23 @@ impl Panel {
                 }
             }
         }
-        let open: Vec<&str> = self.programs.iter().filter(|a| !a.source.sandboxed()).map(|a| a.name.as_str()).collect();
+        let open: Vec<&AppFacts> = self.programs.iter().filter(|a| !a.source.sandboxed()).collect();
         if !open.is_empty() {
-            items.push(info(fl!("not-sandboxed"), Some(fl!("not-sandboxed-list", list = open.join(", ")))));
+            let names: Vec<&str> = open.iter().map(|a| a.name.as_str()).collect();
+            let mut section = settings::section().title(fl!("not-sandboxed"));
+            section = section.add(info(
+                fl!("not-sandboxed"),
+                Some(fl!("not-sandboxed-list", list = names.join(", "))),
+            ));
+            section = section.add(info(fl!("not-sandboxed-homer"), None));
+            for app in &open {
+                let r = self.policy.report(app);
+                let e = r.get(Key::ControlledByHomer);
+                if e.changeable {
+                    section = section.add(permission_control(&app.id, e, app.name.clone()));
+                }
+            }
+            items.push(section.into());
         }
         settings::view_column(items).into()
     }
@@ -788,8 +803,19 @@ impl Panel {
                     move |_| Message::AssistantSet(next.clone()),
                 ))
             };
-            let mut modes = settings::section()
-                .title(fl!("what-it-may-do"))
+            let mut modes = settings::section().title(fl!("what-it-may-do"));
+            if self.policy.homer_forced_off() {
+                modes = modes.add(info(fl!("use-other-apps"), Some(fl!("use-other-apps-off-by-admin"))));
+            } else {
+                let on = self.policy.homer_enabled();
+                let set = ok.then_some(|on| Message::HomerApps(on));
+                modes = modes.add(
+                    settings::item::builder(fl!("use-other-apps"))
+                        .description(fl!("use-other-apps-desc"))
+                        .toggler_maybe(on, set),
+                );
+            }
+            modes = modes
                 .add(mode_item(AssistantMode::Ask, fl!("ask-me-first"), fl!("ask-me-first-desc")))
                 .add(mode_item(AssistantMode::Auto, fl!("act-on-its-own"), fl!("act-on-its-own-desc")));
             if a.mode == AssistantMode::Auto {
@@ -1398,6 +1424,17 @@ impl Panel {
                 }
                 // The tier changes what an app can be given; say so in the file.
                 self.load_permissions();
+            }
+            Message::HomerApps(on) => {
+                if !self.policy.homer_forced_off() {
+                    let programs = self.programs.clone();
+                    if let Err(e) = self.policy.edit(&programs, |p| {
+                        p.set_homer_enabled(on);
+                        Ok(())
+                    }) {
+                        self.error = Some(fl!("save-failed", error = e.to_string()));
+                    }
+                }
             }
             Message::Permission(app, key, value) => {
                 if let Some(f) = self.programs.iter().find(|a| a.id == app).cloned() {

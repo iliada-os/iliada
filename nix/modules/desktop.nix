@@ -140,9 +140,24 @@ in
         IOSchedulingClass = "idle";
       };
     };
+    # Homer's control of other apps: a private socket, a banner, a stop key.
+    systemd.user.services.iliada-control = {
+      description = "Homer's control of other apps";
+      wantedBy = [ "default.target" ];
+      # Accessibility, Chrome and the desktop portal all need the session's
+      # usual tools and sockets.
+      path = [ pkgs.xdg-dbus-proxy pkgs.xdg-utils pkgs.libnotify ];
+      serviceConfig = {
+        ExecStart = "${config.iliada.package}/bin/iliada-control serve";
+        Restart = "on-failure";
+        RestartSec = 2;
+      };
+    };
     environment.systemPackages = [
       # Notifications from scripts and the Setup Assistant's background installs.
       pkgs.libnotify
+      # Filtered accessibility bus for sandboxed apps (Homer's app control).
+      pkgs.xdg-dbus-proxy
       # agora, Iliada Settings and the Setup Assistant.
       desktopApps
       wallpaper
@@ -234,7 +249,7 @@ in
         EOF
         # Iliada's search (Spotlight for Iliada) in place of COSMIC's
         # launcher: Super shows it, Super+O asks Homer, Super+V is the
-        # clipboard. Tiling's "toggle orientation" moves from Super+O to
+        # clipboard, Super+Escape stops Homer in an app. Tiling's "toggle orientation" moves from Super+O to
         # Super+Shift+O. Alt+Space still opens Homer's quick panel
         # (Super+Space stays the keyboard-layout switch). The dock's Search
         # button runs the launcher's desktop entry, replaced below.
@@ -247,6 +262,7 @@ in
             (modifiers: [Super], key: "o"): Spawn("iliada-search homer"),
             (modifiers: [Super, Shift], key: "o"): ToggleOrientation,
             (modifiers: [Super], key: "v"): Spawn("iliada-search clipboard"),
+            (modifiers: [Super], key: "Escape"): Spawn("iliada-control stop"),
             (modifiers: [Alt], key: "space"): Spawn("iliada-ask"),
         }
         EOF

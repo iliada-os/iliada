@@ -61,6 +61,8 @@ pub enum Key {
     Bluetooth,
     SystemChanges,
     OtherApps,
+    /// Homer may read this app's windows and act in them.
+    ControlledByHomer,
 }
 
 /// How Iliada handles a capability today.
@@ -76,7 +78,7 @@ pub enum Rule {
 }
 
 impl Key {
-    pub const ALL: [Key; 20] = [
+    pub const ALL: [Key; 21] = [
         Key::Network,
         Key::Folder(KnownDir::Documents),
         Key::Folder(KnownDir::Downloads),
@@ -97,6 +99,7 @@ impl Key {
         Key::Bluetooth,
         Key::SystemChanges,
         Key::OtherApps,
+        Key::ControlledByHomer,
     ];
 
     /// The key in the file and in JSON.
@@ -122,6 +125,7 @@ impl Key {
             Key::Bluetooth => "devices.bluetooth",
             Key::SystemChanges => "system_changes",
             Key::OtherApps => "other_apps",
+            Key::ControlledByHomer => "controlled_by_homer",
         }
     }
 
@@ -133,7 +137,11 @@ impl Key {
     /// The label inside a sentence ("the camera", "Bluetooth", "USB devices").
     pub fn phrase(self) -> String {
         let l = self.label();
-        if matches!(self, Key::Usb | Key::Bluetooth | Key::Folder(_)) { l } else { l.to_lowercase() }
+        if matches!(self, Key::Usb | Key::Bluetooth | Key::Folder(_) | Key::ControlledByHomer) {
+            l
+        } else {
+            l.to_lowercase()
+        }
     }
 
     pub fn label(self) -> String {
@@ -154,7 +162,14 @@ impl Key {
             Key::Bluetooth => "Bluetooth".into(),
             Key::SystemChanges => "Changing the system".into(),
             Key::OtherApps => "Talking to other apps".into(),
+            Key::ControlledByHomer => "Homer may control".into(),
         }
+    }
+
+    /// Decided for every app, even if the app does not declare it: this is
+    /// about what Homer may do, not what the app asks for.
+    pub fn always_decided(self) -> bool {
+        matches!(self, Key::ControlledByHomer)
     }
 
     /// The capability an app declares for this key, when there is one.
@@ -207,6 +222,7 @@ impl Key {
             Key::OtherApps => {
                 Rule::Never { why: "each app has its own processes and memory, and no D-Bus session bus" }
             }
+            Key::ControlledByHomer => Rule::Decided { default: Value::Ask },
         }
     }
 }
@@ -445,6 +461,16 @@ impl fmt::Display for Problem {
     }
 }
 
+/// The `[homer]` table: the global switch and the whole-screen grant.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HomerSection {
+    /// `None`: not written. Defaults to on for a person, and not off for
+    /// the computer.
+    pub control: Option<bool>,
+    /// Screenshots and the virtual mouse and keyboard. `None`: ask.
+    pub screen: Option<Value>,
+}
+
 /// One file, read. `broken`: Iliada could not read it at all, so every
 /// decided capability is denied until it is fixed.
 #[derive(Debug, Clone, Default)]
@@ -456,6 +482,7 @@ pub struct Loaded {
     pub apps: BTreeMap<String, BTreeMap<Key, Value>>,
     /// Values that were not understood (and so are `deny`).
     pub invalid: BTreeSet<(String, Key)>,
+    pub homer: HomerSection,
 }
 
 /// Keys Iliada writes for people to read; never decisions.
@@ -543,7 +570,10 @@ pub fn parse(text: &str, file: &str, layer: Layer) -> Loaded {
                 out.problems.extend(found.into_iter().map(|(key, m)| problem(Some("all"), key.as_deref(), m)));
                 out.apps.insert("*".into(), parsed);
             }
-            ("apps", _) | ("all", _) => {
+            ("homer", toml::Value::Table(t)) => {
+                out.homer = parse_homer(t, layer, &mut |key, m| out.problems.push(problem(None, key, m)));
+            }
+            ("apps", _) | ("all", _) | ("homer", _) => {
                 out.broken = true;
                 out.problems.push(problem(
                     None,
@@ -555,6 +585,47 @@ pub fn parse(text: &str, file: &str, layer: Layer) -> Loaded {
         }
     }
     out
+}
+
+fn parse_homer(t: &toml::Table, layer: Layer, problem: &mut dyn FnMut(Option<&str>, String)) -> HomerSection {
+    let mut s = HomerSection::default();
+    for (k, v) in t {
+        match k.as_str() {
+            "control" => match (layer, v.as_bool()) {
+                (_, None) => {
+                    problem(Some("control"), format!("{v} must be true or false; treated as off"));
+                    s.control = Some(false);
+                }
+                (Layer::System, Some(true)) => {
+                    problem(Some("control"), "the computer's file can only switch this off; ignored".into())
+                }
+                (Layer::System, Some(false)) => s.control = Some(false),
+                (Layer::User, Some(b)) => s.control = Some(b),
+            },
+            "screen" => {
+                let Some(value) = v.as_str().and_then(Value::parse) else {
+                    problem(
+                        Some("screen"),
+                        format!("{v} is not a value Iliada knows (use allow, deny or ask); ignored"),
+                    );
+                    continue;
+                };
+                match layer {
+                    Layer::System if value == Value::Deny => s.screen = Some(Value::Deny),
+                    Layer::System => {
+                        problem(Some("screen"), format!("\"{value}\" cannot be a limit (use deny); ignored"))
+                    }
+                    Layer::User if matches!(value, Value::Allow | Value::Deny | Value::Ask) => s.screen = Some(value),
+                    Layer::User => problem(
+                        Some("screen"),
+                        format!("\"{value}\" does not apply here (use allow, deny or ask); ignored"),
+                    ),
+                }
+            }
+            _ => problem(Some(k), "is not something [homer] can hold; ignored".into()),
+        }
+    }
+    s
 }
 
 fn parse_app(entry: &toml::Table, layer: Layer, problem: &mut dyn FnMut(Option<&str>, String)) -> BTreeMap<Key, Value> {
@@ -813,6 +884,31 @@ impl Policy {
         !self.user.broken && !self.system.broken
     }
 
+    /// Homer may use other apps at all. Off if the person switched it off,
+    /// an administrator did, or a file cannot be read.
+    pub fn homer_enabled(&self) -> bool {
+        self.readable() && self.user.homer.control.unwrap_or(true) && self.system.homer.control != Some(false)
+    }
+
+    /// An administrator has switched Homer's app control off for everyone.
+    pub fn homer_forced_off(&self) -> bool {
+        self.system.homer.control == Some(false)
+    }
+
+    pub fn set_homer_enabled(&mut self, on: bool) {
+        self.user.homer.control = Some(on);
+    }
+
+    /// What Homer may do with the whole screen (screenshots, the virtual
+    /// mouse and keyboard). The computer can only deny it.
+    pub fn screen_control(&self) -> Value {
+        if !self.readable() || self.system.homer.screen == Some(Value::Deny) || self.system.homer.control == Some(false)
+        {
+            return Value::Deny;
+        }
+        self.user.homer.screen.unwrap_or(Value::Ask)
+    }
+
     pub fn problems(&self) -> Vec<Problem> {
         self.system.problems.iter().chain(&self.user.problems).cloned().collect()
     }
@@ -840,7 +936,7 @@ impl Policy {
         if self.user.broken {
             return Err("the permissions file has a mistake: fix it, or reset it, first".into());
         }
-        if !app.source.sandboxed() {
+        if !app.source.sandboxed() && !key.always_decided() {
             return Err(format!("{} runs as you, outside any sandbox: Iliada cannot limit it", app.name));
         }
         match key.rule() {
@@ -850,7 +946,7 @@ impl Policy {
             }
             Rule::Decided { .. } => {}
         }
-        if !app.declares(key) {
+        if !app.declares(key) && !key.always_decided() {
             return Err(format!("{} does not ask for {}, so it never gets it", app.name, key.phrase()));
         }
         if !choices(key).contains(&value) {
@@ -873,6 +969,7 @@ impl Policy {
             // A full reset starts a clean file, even from a broken one.
             self.user.broken = false;
             self.user.problems.clear();
+            self.user.homer = HomerSection::default();
         }
     }
 
@@ -892,7 +989,7 @@ impl Policy {
                 note: None,
                 purpose: app.declared.get(&key).filter(|p| !p.is_empty()).cloned(),
             };
-            if !app.source.sandboxed() {
+            if !app.source.sandboxed() && !key.always_decided() {
                 e.value = Value::Unrestricted;
                 e.setting = Value::Unrestricted;
                 e.enforced = false;
@@ -909,7 +1006,7 @@ impl Policy {
                     e.note = Some(format!("not restricted yet: {why}"));
                 }
                 Rule::Decided { default } => {
-                    if !app.declares(key) {
+                    if !app.declares(key) && !key.always_decided() {
                         e.value = Value::NotRequested;
                         e.setting = Value::NotRequested;
                         e.decided_by = DecidedBy::Declaration;
@@ -983,7 +1080,7 @@ impl Policy {
         } else {
             vec!["everything you can do: all your files, the internet, every device you can use".into()]
         };
-        let asks = caps.values().filter(|e| e.value == Value::Ask).map(|e| e.key).collect();
+        let asks = caps.values().filter(|e| e.value == Value::Ask && !e.key.always_decided()).map(|e| e.key).collect();
         let mut r = AppReport {
             id: app.id.clone(),
             name: app.name.clone(),
@@ -1028,6 +1125,7 @@ impl Policy {
     pub fn render(&self, apps: &[AppFacts]) -> String {
         let mut s = String::from(HEADER);
         s.push_str(&format!("version = {FORMAT_VERSION}\n"));
+        s.push_str(&render_homer(&self.user.homer, self.system.homer.control == Some(false)));
         let mut seen = BTreeSet::new();
         let mut sorted: Vec<&AppFacts> = apps.iter().collect();
         sorted.sort_by_key(|a| (!a.source.sandboxed(), a.name.to_lowercase()));
@@ -1042,6 +1140,9 @@ impl Policy {
             s.push_str(&format!("source = {}\n", quote(app.source.name())));
             if !app.source.sandboxed() {
                 s.push_str("all = \"unrestricted\"  # runs as you, outside any sandbox: it can do whatever you can\n");
+                let r = self.report(app);
+                let e = r.get(Key::ControlledByHomer);
+                s.push_str(&format!("controlled_by_homer = {:<8}  # {}\n", quote(e.setting.name()), file_comment(e)));
                 continue;
             }
             let r = self.report(app);
@@ -1225,6 +1326,38 @@ fn quote(s: &str) -> String {
     toml::Value::String(s.to_owned()).to_string()
 }
 
+fn render_homer(user: &HomerSection, system_off: bool) -> String {
+    let on = user.control.unwrap_or(true);
+    let screen = user.screen.unwrap_or(Value::Ask);
+    let mut s = String::from(
+        "
+[homer]
+         # Homer may use other apps at all (Settings > Homer > Use other apps).
+",
+    );
+    s.push_str(&format!(
+        "control = {on}
+"
+    ));
+    if system_off {
+        s.push_str(
+            "# in effect: false (an administrator turned this off on this computer)
+",
+        );
+    }
+    s.push_str(
+        "# Screenshots and the virtual mouse and keyboard, for apps with no accessibility.
+         # allow | deny | ask
+",
+    );
+    s.push_str(&format!(
+        "screen = {}
+",
+        quote(screen.name())
+    ));
+    s
+}
+
 const HEADER: &str = "\
 # What every app may use on this computer, for you. One table per app.
 #
@@ -1258,6 +1391,12 @@ const HEADER: &str = "\
 # The computer's administrator can narrow any of this for everyone in
 # /etc/iliada/permissions.toml; that always wins.
 # Machine-readable: `iliada permissions --json` (docs/permissions-schema.md).
+#
+# [homer] is the global switch for Homer using other apps (Settings >
+# Homer > Use other apps), and `screen` for screenshots and the virtual
+# mouse and keyboard. `controlled_by_homer` on each app is whether Homer
+# may use that app (allow, deny or ask). It is decided for every app,
+# including built-in ones.
 
 ";
 
@@ -1331,6 +1470,14 @@ fn describe(r: &mut AppReport) {
     }
     if !asks.is_empty() {
         risk.push(format!("Will ask before it can use {}.", join(&asks)));
+    }
+    match v(Key::ControlledByHomer) {
+        Value::Allow => {
+            summary.push("Homer may use it".into());
+            risk.push("Homer can read this app's windows, press its buttons and type into it.".into());
+        }
+        Value::Ask => risk.push("Homer will ask before using this app.".into()),
+        _ => {}
     }
     let loose: Vec<&str> = [(Key::ClipboardRead, "read what you copy"), (Key::ScreenCapture, "capture your screen")]
         .into_iter()
@@ -1575,6 +1722,8 @@ mod tests {
         assert_eq!(r.get(Key::Folder(KnownDir::Pictures)).value, Value::Ask);
         assert_eq!(r.get(Key::Folder(KnownDir::Documents)).value, Value::NotRequested);
         assert_eq!(r.get(Key::Camera).value, Value::Ask);
+        assert_eq!(r.get(Key::ControlledByHomer).value, Value::Ask);
+        assert!(r.get(Key::ControlledByHomer).changeable);
         assert_eq!(r.get(Key::Notifications).value, Value::Deny);
         assert_eq!(r.get(Key::ClipboardRead).value, Value::Unrestricted);
         assert!(!r.get(Key::ClipboardRead).enforced);
@@ -1762,5 +1911,41 @@ mod tests {
         p.save(&[gimp()]).unwrap();
         assert!(!p.migrated);
         assert!(t.path().join("new.toml").exists());
+    }
+
+    #[test]
+    fn homer_control_is_in_the_permissions_file() {
+        let t = tempfile::tempdir().unwrap();
+        let p = policy(t.path(), None, None);
+        assert!(p.homer_enabled());
+        assert_eq!(p.screen_control(), Value::Ask);
+        let r = p.report(&gimp());
+        assert_eq!(r.get(Key::ControlledByHomer).value, Value::Ask);
+        assert!(r.risk.iter().any(|l| l.contains("Homer will ask")), "{:?}", r.risk);
+
+        let mut p = policy(
+            t.path(),
+            Some(
+                "[homer]\ncontrol = true\nscreen = \"allow\"\n[apps.\"org.gimp.GIMP\"]\ncontrolled_by_homer = \"allow\"\n",
+            ),
+            None,
+        );
+        assert!(p.homer_enabled());
+        assert_eq!(p.screen_control(), Value::Allow);
+        assert!(p.set(&gimp(), Key::ControlledByHomer, Value::Deny).is_ok());
+        p.set_homer_enabled(false);
+        p.save(&[gimp()]).unwrap();
+        let text = std::fs::read_to_string(t.path().join("user.toml")).unwrap();
+        assert!(text.contains("[homer]"), "{text}");
+        assert!(text.contains("control = false"), "{text}");
+        assert!(text.contains("controlled_by_homer"), "{text}");
+        let p = policy(t.path(), None, Some("[homer]\ncontrol = false\n"));
+        assert!(!p.homer_enabled());
+        assert!(p.homer_forced_off());
+        let term = AppFacts::unsandboxed("cosmic-term", "Terminal", Source::BuiltIn);
+        let mut p = policy(t.path(), None, None);
+        assert!(p.set(&term, Key::ControlledByHomer, Value::Allow).is_ok());
+        assert!(p.set(&term, Key::Network, Value::Deny).is_err());
+        assert_eq!(p.report(&term).get(Key::ControlledByHomer).value, Value::Allow);
     }
 }

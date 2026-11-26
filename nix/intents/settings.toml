@@ -1,0 +1,30 @@
+# Homer's intents for Settings: open a page (to show the person where
+# something is). Changing settings goes through Homer's own tools, which
+# ask first; Settings' own window is never driven by Homer.
+app = "com.system76.CosmicSettings"
+name = "Settings"
+
+[[intent]]
+name = "open_page"
+title = "Open a page of Settings"
+run = ["cosmic-settings", "{page}"]
+[intent.params.page]
+type = "enum"
+required = true
+values = [
+  "about", "accessibility", "appearance", "applications", "bluetooth", "date-time",
+  "default-apps", "desktop", "displays", "dock", "input", "keyboard", "mouse", "network",
+  "panel", "power", "region-language", "sound", "startup-apps", "system", "time",
+  "touchpad", "users", "vpn", "wallpaper", "window-management", "wired", "wireless",
+  "workspaces",
+]
+
+[[intent]]
+name = "open_iliada_page"
+title = "Open a page of Iliada's settings"
+description = "Updates, Backup, Privacy (what each app may use), Homer, command-line tools, services, the Iliada account."
+run = ["iliada-settings", "{page}"]
+[intent.params.page]
+type = "enum"
+required = true
+values = ["account", "updates", "backup", "tools", "services", "privacy", "homer", "about"]

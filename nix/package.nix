@@ -14,6 +14,8 @@ rustPlatform.buildRustPackage {
       ../xtask
       # iliada-system's tests check the configuration it writes from these.
       ../templates
+      # Actions Iliada's own apps declare for Homer (intents.rs).
+      ../nix/intents
     ];
   };
   cargoLock.lockFile = ../Cargo.lock;
@@ -25,6 +27,11 @@ rustPlatform.buildRustPackage {
   nativeCheckInputs = [ git ];
 
   # Only the default members (crates/*) are built; xtask is dev tooling.
+
+  postInstall = ''
+    install -Dm644 -t $out/share/iliada/intents nix/intents/*.toml
+  '';
+
   meta = {
     description = "Iliada system tools: the system service, agora, broker, sandbox and the iliada command";
     homepage = "https://iliada-os.com";

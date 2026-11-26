@@ -1,0 +1,24 @@
+# Homer's intents for Text Editor (COSMIC Text Editor), Iliada's notepad.
+app = "com.system76.CosmicEdit"
+name = "Text Editor"
+
+[[intent]]
+name = "open_file"
+title = "Open a text file"
+run = ["cosmic-edit", "{file}"]
+[intent.params.file]
+type = "path"
+description = "The file, like ~/Documents/list.txt"
+required = true
+
+[[intent]]
+name = "new_note"
+title = "Write a note"
+description = "Saves the text as a new note in ~/Documents/Notes (never over another one) and opens it in Text Editor."
+run = ["iliada-control", "note", "{title}", "{text}"]
+[intent.params.title]
+description = "A short title; it becomes the file name"
+required = true
+[intent.params.text]
+description = "What the note says"
+required = true

@@ -292,6 +292,17 @@ async fn main() -> Result<()> {
         args.into_iter().map(|a| a.strip_prefix("file://").map(str::to_owned).unwrap_or(a)).collect();
     spec.args = bundle.info.args.iter().cloned().chain(args).collect();
     spec.grants = granted;
+    // Readable by screen readers and Homer, unless the person said no to
+    // Homer using it (kept running until the app ends).
+    let _a11y = match (&spec.display, std::env::var_os("XDG_RUNTIME_DIR")) {
+        (Some(_), Some(run))
+            if tier == IsolationTier::Namespace && iliada_sandbox::a11y::wanted(bundle.info.id.as_str()) =>
+        {
+            iliada_sandbox::a11y::start(std::path::Path::new(&run), bundle.info.id.as_str(), &bundle.info.name)
+        }
+        _ => None,
+    };
+    spec.grants.a11y = _a11y.as_ref().map(|p| p.socket.clone());
     spec.env.extend(bundle.info.env.iter().map(|(k, v)| (k.clone(), v.clone())));
 
     let backend = backend_for(tier, &host);
@@ -299,5 +310,6 @@ async fn main() -> Result<()> {
     let code = handle.wait().await?.unwrap_or(1);
     // Closes the app's display socket (exit skips destructors).
     drop(secure);
+    drop(_a11y);
     std::process::exit(code);
 }

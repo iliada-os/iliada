@@ -12,6 +12,7 @@ iliada-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
+toml_edit = "0.22"
 thiserror.workspace = true
 
 [dev-dependencies]

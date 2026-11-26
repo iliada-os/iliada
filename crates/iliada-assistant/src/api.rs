@@ -476,11 +476,36 @@ fn to_chat(system: &str, tools: &Value, messages: &[Value]) -> Value {
             (Some(role), Some(text)) => out.push(json!({ "role": role, "content": text })),
             (Some("user"), None) => {
                 let mut texts = Vec::new();
+                // Tool messages carry only text: screenshots follow them in
+                // a user message.
+                let mut images = Vec::new();
                 for b in content.as_array().into_iter().flatten() {
                     match b["type"].as_str() {
                         Some("tool_result") => {
-                            let text =
-                                b["content"].as_str().map(str::to_owned).unwrap_or_else(|| b["content"].to_string());
+                            let text = match &b["content"] {
+                                Value::String(s) => s.clone(),
+                                Value::Array(parts) => {
+                                    let mut t = Vec::new();
+                                    for p in parts {
+                                        match p["type"].as_str() {
+                                            Some("text") => t.push(p["text"].as_str().unwrap_or("").to_owned()),
+                                            Some("image") => {
+                                                t.push("(screenshot below)".to_owned());
+                                                images.push(
+                                                    json!({ "type": "image_url", "image_url": { "url": format!(
+                                                    "data:{};base64,{}",
+                                                    p["source"]["media_type"].as_str().unwrap_or("image/png"),
+                                                    p["source"]["data"].as_str().unwrap_or("")
+                                                ) } }),
+                                                );
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    t.join("\n")
+                                }
+                                other => other.to_string(),
+                            };
                             let text = if b["is_error"] == true { format!("Error: {text}") } else { text };
                             out.push(json!({ "role": "tool", "tool_call_id": b["tool_use_id"], "content": text }));
                         }
@@ -488,7 +513,13 @@ fn to_chat(system: &str, tools: &Value, messages: &[Value]) -> Value {
                         _ => {}
                     }
                 }
-                if !texts.is_empty() {
+                if !images.is_empty() {
+                    let mut parts =
+                        vec![json!({ "type": "text", "text": "The screenshots the tools above returned:" })];
+                    parts.extend(images);
+                    parts.extend(texts.drain(..).map(|t| json!({ "type": "text", "text": t })));
+                    out.push(json!({ "role": "user", "content": parts }));
+                } else if !texts.is_empty() {
                     out.push(json!({ "role": "user", "content": texts.join("\n") }));
                 }
             }
@@ -560,6 +591,23 @@ fn from_chat(v: &Value) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn screenshots_reach_chat_models_after_the_tool_messages() {
+        let msgs = vec![
+            json!({ "role": "assistant", "content": [{ "type": "tool_use", "id": "c1", "name": "screenshot", "input": {} }] }),
+            json!({ "role": "user", "content": [{ "type": "tool_result", "tool_use_id": "c1", "content": [
+                { "type": "text", "text": "the screen" },
+                { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": "AAAA" } }
+            ] }] }),
+        ];
+        let c = to_chat("s", &json!([]), &msgs);
+        let m = c["messages"].as_array().unwrap();
+        assert_eq!(m[2]["role"], "tool");
+        assert_eq!(m[2]["content"], "the screen\n(screenshot below)");
+        assert_eq!(m[3]["role"], "user");
+        assert_eq!(m[3]["content"][1]["image_url"]["url"], "data:image/png;base64,AAAA");
+    }
 
     #[test]
     fn keys_are_shown_masked() {

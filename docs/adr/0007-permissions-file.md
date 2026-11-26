@@ -108,3 +108,6 @@ file needs per-user brokers (later work).
   it.
 * Clipboard, screen capture and background running are visibly
   "not restricted yet" until the compositor and portals enforce them.
+
+See also ADR 0008: Homer's use of other apps is gated by this
+file (`[homer]` and `controlled_by_homer`).

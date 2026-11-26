@@ -1,0 +1,12 @@
+# Homer's intents for Terminal (COSMIC Terminal).
+app = "com.system76.CosmicTerm"
+name = "Terminal"
+
+[[intent]]
+name = "open_in_folder"
+title = "Open a terminal in a folder"
+run = ["cosmic-term", "--working-directory", "{folder}"]
+[intent.params.folder]
+type = "path"
+description = "The folder, like ~/Projects/site"
+required = true

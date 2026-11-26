@@ -256,6 +256,13 @@ pub fn definitions(full_access: bool) -> Value {
             .into_iter()
             .filter(|t| full_access || !t.full_access)
             .map(|t| json!({ "name": t.name, "description": t.description, "input_schema": t.schema }))
+            // Other apps (crate::control) and what they declare (crate::intents).
+            .chain(crate::control::definitions())
+            .chain(if crate::control::definitions().is_empty() {
+                Vec::new()
+            } else {
+                crate::intents::definitions(&crate::intents::load())
+            })
             .collect(),
     )
 }
@@ -410,6 +417,10 @@ pub fn describe(name: &str, input: &Value) -> String {
         }
         "back_up_now" => "Back up now".into(),
         "set_permission" => describe_permission(input),
+        n if crate::control::is_control(n) => crate::control::describe(n, input),
+        n if n.starts_with("intent_") => crate::intents::find(&crate::intents::load(), n)
+            .map(|i| crate::intents::describe(i, input))
+            .unwrap_or_else(|| n.to_owned()),
         other => other.to_owned(),
     }
 }

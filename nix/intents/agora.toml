@@ -1,0 +1,12 @@
+# Homer's intents for agora, Iliada's app store. Installing goes through
+# Homer's own install_app tool (which asks first); this only shows things.
+app = "org.iliada.Agora"
+name = "agora"
+
+[[intent]]
+name = "search"
+title = "Search agora"
+description = "Opens agora showing what it has for some words (apps, software, services)."
+run = ["iliada-store-gui", "--search", "{words}"]
+[intent.params.words]
+required = true

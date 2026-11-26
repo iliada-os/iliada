@@ -50,7 +50,11 @@ fn capabilities(app: &AppEntry) -> String {
 
 fn main() -> cosmic::iced::Result {
     let settings = Settings::default().size(Size::new(960.0, 720.0));
-    cosmic::app::run::<App>(settings, ())
+    // `--search <words>` opens agora with that search (Homer's "show in
+    // agora" intent, links from elsewhere).
+    let args: Vec<String> = std::env::args().collect();
+    let search = args.iter().position(|a| a == "--search").and_then(|i| args.get(i + 1)).cloned().unwrap_or_default();
+    cosmic::app::run::<App>(settings, search)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -396,7 +400,7 @@ impl App {
 
 impl cosmic::Application for App {
     type Executor = executor::Default;
-    type Flags = ();
+    type Flags = String;
     type Message = Message;
     const APP_ID: &'static str = "org.iliada.Agora";
 
@@ -407,7 +411,7 @@ impl cosmic::Application for App {
         &mut self.core
     }
 
-    fn init(core: Core, _flags: ()) -> (Self, Task<Message>) {
+    fn init(core: Core, search: String) -> (Self, Task<Message>) {
         let mut nav = nav_bar::Model::default();
         nav.insert()
             .text(fl!("discover"))
@@ -441,7 +445,7 @@ impl cosmic::Application for App {
             catalog: None,
             icons: BTreeMap::new(),
             status: BTreeMap::new(),
-            search: String::new(),
+            search,
             system: None,
         };
         app.set_header_title(fl!("agora"));
