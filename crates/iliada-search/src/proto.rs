@@ -76,6 +76,15 @@ pub enum Request {
     ShowWindows {
         enabled: bool,
     },
+    /// An extension's results for what follows its keyword (after a
+    /// [`Response::Extension`]). Waits for the extension: send it on its own
+    /// connection.
+    ExtensionQuery {
+        extension: String,
+        query: String,
+    },
+    /// The overlay closed: stop every extension.
+    ExtensionsStop,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -106,6 +115,18 @@ pub enum Response {
     Preview {
         preview: crate::preview::Preview,
     },
+    /// The query is for an extension: ask it with
+    /// [`Request::ExtensionQuery`] (unless `query` is empty).
+    Extension {
+        extension: String,
+        title: String,
+        keyword: String,
+        #[serde(default)]
+        placeholder: Option<String>,
+        query: String,
+    },
+    /// A newer query replaced this one.
+    Stale,
 }
 
 pub fn socket_path() -> Option<PathBuf> {
@@ -142,6 +163,13 @@ impl Client {
     pub fn search(&mut self, query: &str, homer: bool, limit: usize) -> Result<(Vec<Hit>, u64)> {
         match self.call(&Request::Search { query: query.to_owned(), homer, limit })? {
             Response::Hits { hits, micros } => Ok((hits, micros)),
+            Response::Extension { extension, query, .. } if !query.is_empty() => {
+                match self.call(&Request::ExtensionQuery { extension, query })? {
+                    Response::Hits { hits, micros } => Ok((hits, micros)),
+                    _ => Ok((Vec::new(), 0)),
+                }
+            }
+            Response::Extension { .. } => Ok((Vec::new(), 0)),
             Response::Error { message } => bail!(message),
             other => bail!("unexpected reply {other:?}"),
         }
@@ -166,5 +194,8 @@ mod tests {
         let s = serde_json::to_string(&r).unwrap();
         assert_eq!(s, r#"{"op":"search","query":"fire","homer":true,"limit":8}"#);
         assert_eq!(serde_json::from_str::<Request>(&s).unwrap(), r);
+        let r = Request::ExtensionQuery { extension: "org.example.color".into(), query: "#f00".into() };
+        let s = serde_json::to_string(&r).unwrap();
+        assert_eq!(s, r##"{"op":"extension_query","extension":"org.example.color","query":"#f00"}"##);
     }
 }

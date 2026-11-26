@@ -77,6 +77,12 @@ fn print_card(r: &AppReport) {
     println!("{} ({}), {}, {how}", r.name, r.id, r.source.name());
     println!("  Can touch:  {}", r.summary.join(", "));
     println!("  Worst case: {}", r.worst_case);
+    if let Some(s) = &r.search {
+        let line = s.sentence();
+        let mut chars = line.chars();
+        let line: String = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
+        println!("  Search:     {line}");
+    }
     if !r.asks.is_empty() {
         let asks: Vec<String> = r.asks.iter().map(|k| k.label().to_lowercase()).collect();
         println!("  Asks next time it opens: {}", asks.join(", "));

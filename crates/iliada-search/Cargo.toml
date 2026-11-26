@@ -18,6 +18,8 @@ path = "src/bin/iliada-search.rs"
 
 [dependencies]
 iliada-store.workspace = true
+# Search extensions: the [search] table, keywords, the person's choices.
+iliada-bundle.workspace = true
 iliada-types.workspace = true
 iliada-catalog.workspace = true
 anyhow.workspace = true

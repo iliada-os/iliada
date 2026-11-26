@@ -68,5 +68,6 @@ pub fn kind_label(kind: iliada_search::Kind) -> String {
         Command => crate::fl!("kind-command"),
         Clipboard => crate::fl!("kind-clipboard"),
         Window => crate::fl!("kind-window"),
+        Extension => crate::fl!("kind-extension"),
     }
 }

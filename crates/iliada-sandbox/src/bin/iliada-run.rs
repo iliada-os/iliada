@@ -5,6 +5,12 @@
 //!
 //! This is what desktop entries exported by `iliada-appd` execute, so apps
 //! are never started outside a sandbox.
+//!
+//!     iliada-run --search-extension /Applications/GitHub.app
+//!
+//! starts a Search extension for the search service: always in the
+//! namespace sandbox, its stdin and stdout the service's pipe to it, and
+//! nothing else (ADR 0009).
 
 use std::path::{Path, PathBuf};
 
@@ -18,7 +24,7 @@ use iliada_types::KnownDir;
 const APPLICATIONS: &str = "/Applications";
 
 fn usage() -> ! {
-    eprintln!("usage: iliada-run [--config <isolation.json>] <bundle.app | app-id> [args...]");
+    eprintln!("usage: iliada-run [--config <isolation.json>] [--search-extension] <bundle.app | app-id> [args...]");
     std::process::exit(2);
 }
 
@@ -214,6 +220,54 @@ fn grants(bundle: &Bundle, tier: IsolationTier) -> (Grants, NetworkPolicy) {
     (g, network)
 }
 
+/// A Search extension's private, writable folder: its home in the sandbox,
+/// apart from the app's own data (an extension may also be an app).
+fn extension_cache(app: &str) -> Result<PathBuf> {
+    let base = match std::env::var_os("XDG_CACHE_HOME") {
+        Some(x) => PathBuf::from(x),
+        None => home().context("HOME is not set")?.join(".cache"),
+    };
+    Ok(base.join("iliada/search-extensions").join(app))
+}
+
+/// Run a Search extension. Always the namespace tier (a micro-VM would take
+/// too long to answer a keystroke), and none of what an app may be given:
+/// no display (so no clipboard or screen), no sound, camera, folders,
+/// accessibility or D-Bus, and no broker to ask for any of them. Only
+/// stdin and stdout, which are the search service's pipe to it, and the
+/// internet when the bundle declares it and the permissions files allow it.
+/// Nobody is ever asked anything: an undecided answer means no.
+async fn run_search_extension(host: &HostIsolationConfig, target: &str) -> Result<()> {
+    let bundle = find_bundle(target)?;
+    let id = bundle.info.id.as_str().to_owned();
+    anyhow::ensure!(bundle.info.search.is_some(), "{id} is not a Search extension (no [search] in its Info.toml)");
+    if let Some(why) = bundle.wrong_processor() {
+        bail!("{why}");
+    }
+    let choices = iliada_bundle::search::Choices::default_path()
+        .map(|p| iliada_bundle::search::Choices::load(&p))
+        .unwrap_or_default();
+    if choices.extensions.get(&id).is_some_and(|c| !c.enabled) {
+        bail!("the Search extension {id} is turned off in Settings");
+    }
+    let facts = AppFacts::from_bundle(&bundle, IsolationTier::Namespace);
+    let network = if Policy::load().report(&facts).get(Key::Network).value == Value::Allow {
+        NetworkPolicy::Nat
+    } else {
+        NetworkPolicy::None
+    };
+    let cache = extension_cache(&id)?;
+    std::fs::create_dir_all(&cache).with_context(|| format!("creating {}", cache.display()))?;
+    let mut spec = SandboxSpec::from_bundle(&bundle, host, network, cache)?;
+    spec.broker = false;
+    spec.args = bundle.info.args.clone();
+    spec.env.extend(bundle.info.env.iter().map(|(k, v)| (k.clone(), v.clone())));
+    let backend = backend_for(IsolationTier::Namespace, host);
+    let mut handle = backend.launch(&spec).await?;
+    let code = handle.wait().await?.unwrap_or(1);
+    std::process::exit(code);
+}
+
 /// Arguments that are files the user opened (absolute paths, or file://
 /// URLs, that exist): the app gets exactly those. System paths never.
 fn opened_files(args: &[String]) -> Vec<PathBuf> {
@@ -239,6 +293,11 @@ async fn main() -> Result<()> {
     }
     if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
         usage();
+    }
+    if args[0] == "--search-extension" {
+        let Some(target) = args.get(1) else { usage() };
+        let host = HostIsolationConfig::load(&config)?;
+        return run_search_extension(&host, target).await;
     }
     let target = args.remove(0);
     if args.first().map(String::as_str) == Some("--") {

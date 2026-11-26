@@ -369,6 +369,11 @@ async fn build(
                     .map(|k| k.name().to_owned())
                     .collect(),
             ),
+            search: bundle
+                .info
+                .search
+                .as_ref()
+                .map(|s| iliada_catalog::SearchEntry { keyword: s.keyword.clone(), title: s.title.clone() }),
         };
         fs::create_dir_all(out.join("entries"))?;
         fs::write(

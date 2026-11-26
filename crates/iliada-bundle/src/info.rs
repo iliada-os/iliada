@@ -4,6 +4,7 @@ use iliada_types::AppId;
 use serde::{Deserialize, Serialize};
 
 use crate::BundleError;
+use crate::search::SearchInfo;
 
 /// `Contents/Info.toml`: who the app is and how to start it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -42,6 +43,10 @@ pub struct Info {
     pub categories: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mime_types: Vec<String>,
+    /// A Search extension: results under a keyword (ADR 0009). Its own
+    /// table, so it goes last in the file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search: Option<SearchInfo>,
 }
 
 /// How strongly the app is separated from the host.
@@ -84,6 +89,9 @@ impl Info {
         {
             return Err(BundleError::Invalid(format!("Info.icon {icon:?} must be a relative path inside Contents")));
         }
+        if let Some(search) = &self.search {
+            search.validate()?;
+        }
         Ok(())
     }
 }
@@ -115,6 +123,7 @@ mod tests {
             network: false,
             categories: vec![],
             mime_types: vec![],
+            search: None,
         }
     }
 
@@ -124,6 +133,29 @@ mod tests {
         let text = toml::to_string(&info).unwrap();
         assert_eq!(toml::from_str::<Info>(&text).unwrap(), info);
         assert!(text.contains(r#"isolation = "micro-vm""#));
+    }
+
+    #[test]
+    fn search_extensions() {
+        let base = toml::to_string(&sample()).unwrap();
+        let with = |table: &str| toml::from_str::<Info>(&format!("{base}\n[search]\n{table}"));
+        let info = with("keyword = \"gh\"\ntitle = \"GitHub\"\nplaceholder = \"Search repositories\"\n").unwrap();
+        info.validate().unwrap();
+        let s = info.search.as_ref().unwrap();
+        assert_eq!((s.keyword.as_str(), s.title.as_str()), ("gh", "GitHub"));
+        assert_eq!(s.placeholder.as_deref(), Some("Search repositories"));
+        assert_eq!(toml::from_str::<Info>(&toml::to_string(&info).unwrap()).unwrap(), info);
+        // The placeholder is optional; the keyword and title are not.
+        with("keyword = \"tr\"\ntitle = \"Translate\"\n").unwrap().validate().unwrap();
+        assert!(with("title = \"GitHub\"\n").is_err());
+        // Unknown keys are still refused, in the table too.
+        assert!(with("keyword = \"gh\"\ntitle = \"GitHub\"\ncommand = \"rm\"\n").is_err());
+        // A bad or reserved keyword makes the bundle invalid.
+        for bad in ["GH", "g h", "abcdefghijklm", "", "w", ">", "?"] {
+            let info = with(&format!("keyword = {bad:?}\ntitle = \"X\"\n")).unwrap();
+            assert!(info.validate().is_err(), "{bad:?}");
+        }
+        assert!(sample().validate().is_ok() && sample().search.is_none());
     }
 
     #[test]

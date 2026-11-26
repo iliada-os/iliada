@@ -9,6 +9,7 @@ use nucleo_matcher::{Config, Matcher, Utf32Str};
 
 use crate::agora::Offer;
 use crate::apps::App;
+use crate::extensions::Extension;
 use crate::files::FileIndex;
 use crate::settings::{ACTIONS, PAGES};
 use crate::usage::Usage;
@@ -34,6 +35,8 @@ pub struct Engine {
     pub windows: RwLock<Vec<Window>>,
     /// Settings → Privacy → Search: show open windows.
     pub show_windows: std::sync::atomic::AtomicBool,
+    /// Installed Search extensions (on or off, with their keywords).
+    pub extensions: RwLock<Vec<Extension>>,
 }
 
 /// Rows of each kind, at most.
@@ -200,7 +203,26 @@ impl Engine {
             indexing: std::sync::atomic::AtomicBool::new(false),
             windows: RwLock::new(Vec::new()),
             show_windows: std::sync::atomic::AtomicBool::new(true),
+            extensions: RwLock::new(Vec::new()),
         }
+    }
+
+    /// The extension a query is for: it starts with an active extension's
+    /// keyword and a space. Returns the extension and what follows (the
+    /// only thing it is ever told).
+    pub fn route(&self, query: &str) -> Option<(Extension, String)> {
+        let (keyword, rest) = query.trim_start().split_once(' ')?;
+        if iliada_bundle::search::RESERVED.contains(&keyword) {
+            return None;
+        }
+        let ext = self
+            .extensions
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .find(|e| e.active() && e.keyword == keyword)?
+            .clone();
+        Some((ext, rest.trim().to_owned()))
     }
 
     /// The results for `query`, best first.
@@ -209,6 +231,10 @@ impl Engine {
         // `w ` lists open windows only.
         if let Some(words) = query.trim_start().strip_prefix("w ") {
             return self.windows_only(words.trim(), limit);
+        }
+        // `<keyword> `: an extension answers (`Request::ExtensionQuery`).
+        if self.route(query).is_some() {
+            return Vec::new();
         }
         let q = query.trim();
         if q.is_empty() {
@@ -643,6 +669,48 @@ mod tests {
         assert!(e.search("w camera", false, 8).is_empty());
         // "w" alone is an ordinary search.
         assert!(e.search("w", false, 8).iter().any(|h| h.kind != Kind::Window));
+    }
+
+    fn extension(id: &str, keyword: &str, enabled: bool, clashes_with: Option<&str>) -> Extension {
+        Extension {
+            id: id.into(),
+            title: id.to_uppercase(),
+            placeholder: None,
+            keyword: keyword.into(),
+            declared_keyword: keyword.into(),
+            enabled,
+            network: false,
+            clashes_with: clashes_with.map(str::to_owned),
+            bundle: format!("/Applications/{id}.app").into(),
+        }
+    }
+
+    #[test]
+    fn keywords_route_to_extensions() {
+        let e = engine();
+        *e.extensions.write().unwrap() = vec![
+            extension("color", "color", true, None),
+            extension("gh", "gh", true, None),
+            extension("hub", "gh", true, Some("GH")),
+            extension("off", "tr", false, None),
+        ];
+        let route = |q: &str| e.route(q).map(|(x, rest)| (x.id, rest));
+        assert_eq!(route("color #ff0000"), Some(("color".into(), "#ff0000".into())));
+        assert_eq!(route("  gh  ripgrep tools "), Some(("gh".into(), "ripgrep tools".into())));
+        assert_eq!(route("gh "), Some(("gh".into(), String::new())));
+        // Only the keyword and a space: "gh" alone, "ghost" and "GH x" are
+        // ordinary searches.
+        assert_eq!(route("gh"), None);
+        assert_eq!(route("ghost town"), None);
+        assert_eq!(route("GH x"), None);
+        // Turned off: an ordinary search.
+        assert_eq!(route("tr hello"), None);
+        assert!(!e.search("tr hello", false, 8).is_empty());
+        // An extension query is never searched anywhere else.
+        assert!(e.search("color red", false, 8).is_empty());
+        // Search's own prefixes win, whatever an extension claims.
+        *e.extensions.write().unwrap() = vec![extension("bad", "w", true, None)];
+        assert_eq!(route("w firefox"), None);
     }
 
     #[test]

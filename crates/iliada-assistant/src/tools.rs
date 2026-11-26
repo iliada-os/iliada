@@ -150,7 +150,8 @@ pub fn all() -> Vec<Tool> {
                 Without app: every program at a glance (sandboxed apps, and built-in programs and command-line tools, which are not sandboxed and can do whatever the person can). \
                 With app: every capability with its value (allow, deny, ask, read-write, read-only, not-requested, unrestricted), who decided it, its exact scope (folder paths), and whether it is enforced. \
                 Each app has generated `summary`, `risk` and `worst_case` texts: use them to answer questions like \"could this app delete my photos\" or \"could it send my files online\" precisely. \
-                `unrestricted` means Iliada cannot restrict it yet: say so plainly, never imply it is safe.",
+                `unrestricted` means Iliada cannot restrict it yet: say so plainly, never imply it is safe. \
+                Search extensions are listed like apps, with `search_extension` (or `search` with app): their keyword, whether they are on, and whether they can use the internet. They only ever see what the person types after their keyword in Search.",
             schema: obj(
                 json!({ "app": { "type": "string", "description": "App name or id; omit for every app" } }),
                 &[],
@@ -674,9 +675,14 @@ pub async fn run_in(store: &Store, name: &str, input: &Value, cwd: Option<&std::
                             .filter(|e| e.value != Access::NotRequested && !matches!(e.key.rule(), Rule::Never { .. }))
                             .map(|e| (e.key.name().to_owned(), json!(e.value)))
                             .collect();
-                        json!({ "app": r.name, "id": r.id, "source": r.source, "sandboxed": true,
+                        let mut v = json!({ "app": r.name, "id": r.id, "source": r.source, "sandboxed": true,
                                 "isolation": r.isolation, "summary": r.summary, "worst_case": r.worst_case,
-                                "asks_next_time": r.asks, "capabilities": caps })
+                                "asks_next_time": r.asks, "capabilities": caps });
+                        // A Search extension: its keyword, on or off, internet or not.
+                        if let Some(s) = &r.search {
+                            v["search_extension"] = json!(s);
+                        }
+                        v
                     })
                     .collect();
                 json!({ "schema": SCHEMA, "readable": p.readable(), "problems": problems, "apps": apps,

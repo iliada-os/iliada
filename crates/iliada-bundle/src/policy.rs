@@ -371,6 +371,8 @@ pub struct AppFacts {
     pub isolation: Option<IsolationTier>,
     /// What it declares, with the purpose it gives.
     pub declared: BTreeMap<Key, String>,
+    /// It adds results to Search under a keyword (ADR 0009).
+    pub search: Option<crate::search::Extension>,
 }
 
 impl AppFacts {
@@ -392,6 +394,7 @@ impl AppFacts {
             source: Source::Agora,
             isolation: Some(isolation),
             declared,
+            search: None,
         }
     }
 
@@ -412,6 +415,7 @@ impl AppFacts {
             source: Source::Agora,
             isolation: Some(IsolationTier::Namespace),
             declared,
+            search: None,
         }
     }
 
@@ -426,7 +430,14 @@ impl AppFacts {
     }
 
     pub fn unsandboxed(id: &str, name: &str, source: Source) -> Self {
-        Self { id: id.to_owned(), name: name.to_owned(), source, isolation: None, declared: BTreeMap::new() }
+        Self {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            source,
+            isolation: None,
+            declared: BTreeMap::new(),
+            search: None,
+        }
     }
 
     pub fn declares(&self, key: Key) -> bool {
@@ -486,7 +497,8 @@ pub struct Loaded {
 }
 
 /// Keys Iliada writes for people to read; never decisions.
-const INFORMATIONAL: [&str; 8] = ["name", "source", "isolation", "risk", "worst_case", "summary", "installed", "all"];
+const INFORMATIONAL: [&str; 9] =
+    ["name", "source", "isolation", "risk", "worst_case", "summary", "installed", "all", "search_extension"];
 
 /// Which file a [`parse`] reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -776,6 +788,40 @@ pub struct AppReport {
     pub asks: Vec<Key>,
     /// Every capability, by its key.
     pub capabilities: BTreeMap<&'static str, Entry>,
+    /// A Search extension: its keyword, and whether it is on and online.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search: Option<SearchReport>,
+}
+
+/// A Search extension's part of the card (ADR 0009). It only ever learns
+/// what the person types after its keyword.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SearchReport {
+    pub keyword: String,
+    pub title: String,
+    /// Turned on in Settings (and not waiting for a new keyword).
+    pub enabled: bool,
+    /// Search sends it queries now.
+    pub active: bool,
+    /// It can use the internet (declared, and allowed by the files).
+    pub internet: bool,
+    /// The extension that has this keyword: this one needs a new one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clashes_with: Option<String>,
+}
+
+impl SearchReport {
+    /// One line for the file and the command line.
+    pub fn sentence(&self) -> String {
+        let mut s = format!("a Search extension: it sees only what you type after \"{} \"", self.keyword);
+        s.push_str(if self.internet { ", and can use the internet" } else { ", with no internet" });
+        if let Some(by) = &self.clashes_with {
+            s.push_str(&format!("; waiting for a new keyword (\"{}\" is used by {by})", self.keyword));
+        } else if !self.enabled {
+            s.push_str("; turned off in Settings");
+        }
+        s
+    }
 }
 
 impl AppReport {
@@ -823,7 +869,7 @@ impl Policy {
         Some(Self::config_home()?.join("iliada/permissions.toml"))
     }
 
-    fn config_home() -> Option<PathBuf> {
+    pub(crate) fn config_home() -> Option<PathBuf> {
         env_path("XDG_CONFIG_HOME").or_else(|| Some(env_path("HOME")?.join(".config")))
     }
 
@@ -1093,8 +1139,21 @@ impl Policy {
             always,
             asks,
             capabilities: caps,
+            search: None,
         };
         describe(&mut r);
+        if let Some(ext) = &app.search {
+            let internet = app.source.sandboxed() && r.get(Key::Network).value.grants();
+            r.summary.push(format!("what you type after \"{}\" in Search", ext.keyword));
+            r.search = Some(SearchReport {
+                keyword: ext.keyword.clone(),
+                title: ext.title.clone(),
+                enabled: ext.enabled,
+                active: ext.active(),
+                internet,
+                clashes_with: ext.clashes_with.clone(),
+            });
+        }
         r
     }
 
@@ -1152,6 +1211,9 @@ impl Policy {
                     IsolationTier::MicroVm => "micro-vm",
                 };
                 s.push_str(&format!("isolation = {}\n", quote(t)));
+            }
+            if let Some(ext) = &r.search {
+                s.push_str(&format!("search_extension = {}  # {}\n", quote(&ext.keyword), ext.sentence()));
             }
             s.push_str(&format!("worst_case = {}\n", quote(&r.worst_case)));
             s.push_str("risk = [\n");
@@ -1617,6 +1679,14 @@ pub fn installed_bundles() -> Vec<(Bundle, AppFacts)> {
         })
         .collect();
     out.sort_by_key(|(_, f)| f.name.to_lowercase());
+    // Search extensions: keywords shared out among all of them.
+    let candidates = out.iter().filter_map(|(b, _)| crate::search::candidate(b)).collect();
+    let choices = crate::search::Choices::default_path().map(|p| crate::search::Choices::load(&p)).unwrap_or_default();
+    for ext in crate::search::resolve(candidates, &choices) {
+        if let Some((_, f)) = out.iter_mut().find(|(_, f)| f.id == ext.id) {
+            f.search = Some(ext);
+        }
+    }
     out
 }
 
@@ -1860,6 +1930,45 @@ mod tests {
         assert_eq!(back.apps["org.gimp.GIMP"][&Key::Network], Value::Deny);
         assert_eq!(back.apps["org.gone.App"][&Key::Camera], Value::Allow);
         assert_eq!(back.apps["org.gimp.GIMP"].get(&Key::Camera), Some(&Value::Ask));
+    }
+
+    #[test]
+    fn search_extensions_are_listed_with_their_keyword_and_internet() {
+        let t = tempfile::tempdir().unwrap();
+        let mut p = policy(t.path(), None, None);
+        let mut gh = AppFacts::from_declared("org.example.gh", "GitHub Search", true, &[]);
+        gh.search = Some(crate::search::Extension {
+            id: gh.id.clone(),
+            title: "GitHub".into(),
+            placeholder: None,
+            keyword: "gh".into(),
+            declared_keyword: "gh".into(),
+            enabled: true,
+            network: true,
+            clashes_with: None,
+            bundle: "/Applications/GitHub Search.app".into(),
+        });
+        let r = p.report(&gh);
+        let s = r.search.clone().unwrap();
+        assert!(s.active && s.internet, "{s:?}");
+        assert!(r.summary.iter().any(|l| l.contains("after \"gh\" in Search")), "{:?}", r.summary);
+        let json = serde_json::to_value(&r).unwrap();
+        assert_eq!(json["search"]["keyword"], "gh");
+        assert_eq!(json["search"]["internet"], true);
+        // The person turns its internet off: the card and the file say so.
+        p.set(&gh, Key::Network, Value::Deny).unwrap();
+        assert!(!p.report(&gh).search.unwrap().internet);
+        let text = p.render(std::slice::from_ref(&gh));
+        assert!(text.contains("search_extension = \"gh\"  # a Search extension: it sees only what you type after \"gh \", with no internet"), "{text}");
+        let back = parse(&text, "x", Layer::User);
+        assert!(back.problems.is_empty(), "{:?}", back.problems);
+        assert_eq!(back.apps["org.example.gh"][&Key::Network], Value::Deny);
+        // Waiting for a keyword.
+        gh.search.as_mut().unwrap().clashes_with = Some("Other".into());
+        let r = p.report(&gh).search.unwrap();
+        assert!(!r.active && r.sentence().contains("waiting for a new keyword"));
+        // Apps that are not extensions have no search part.
+        assert!(p.report(&gimp()).search.is_none());
     }
 
     #[test]

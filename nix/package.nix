@@ -12,6 +12,8 @@ rustPlatform.buildRustPackage {
       ../.cargo
       ../crates
       ../xtask
+      # A workspace member (the example Search extension); not built here.
+      ../examples/search-extension-color
       # iliada-system's tests check the configuration it writes from these.
       ../templates
       # Actions Iliada's own apps declare for Homer (intents.rs).

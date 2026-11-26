@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Search extensions from agora**: an extension adds its own results to
+  Search under a keyword. Type the keyword and a space, then what you
+  want: `color #ff0000` shows the hex, rgb and hsl values to copy. An
+  extension is an ordinary agora bundle with a `[search]` table. It always
+  runs in its sandbox with no window, folders, clipboard, screen, sound,
+  camera or D-Bus, never asks for permissions, and only ever sees what you
+  type after its keyword. It can only copy text, open an `https` address or
+  ask Homer. The internet only when it declares it, and the permissions
+  file can still turn that off. agora says before installing what it will
+  see; the permissions file, `iliada permissions` and Homer list each
+  extension with its keyword and whether it can use the internet; Settings
+  → Privacy → Search turns them off or gives one a new keyword when two
+  want the same. Writing one: docs/search-extensions.md; an example:
+  examples/search-extension-color.
+- **Typing a space in Search** works again once you have typed something
+  (keywords, `w `, several words). Space still opens Quick Look before you
+  type, and **Shift+Space** opens it at any time.
 - **Switch windows from Search**: type part of a window's title or its
   app's name and choose it to go to that window, even on another
   workspace or minimized. Like Alt+Tab, but you type to find the window.

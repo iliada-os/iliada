@@ -4,6 +4,7 @@
 //!   linux-test  run the test suite inside a Linux container (Landlock, real paths)
 //!   demo-ingest ingest a package (default: debian:jq) into ./out
 //!   demo-broker start the broker for examples/bundles/voice-memo.app
+//!   bundle-color build the example Search extension into examples/bundles/color.app
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -54,8 +55,9 @@ fn main() -> Result<()> {
                 ],
             )
         }
+        Some("bundle-color") => bundle_color(),
         _ => {
-            eprintln!("usage: cargo xtask <ci|linux-test|demo-ingest [source]|demo-broker>");
+            eprintln!("usage: cargo xtask <ci|linux-test|demo-ingest [source]|demo-broker|bundle-color>");
             std::process::exit(2);
         }
     }
@@ -101,6 +103,18 @@ fn linux_test(root: &std::path::Path) -> Result<()> {
         return run("limactl", &["shell", "--workdir", &root.display().to_string(), "iliada", "bash", "-lc", &script]);
     }
     bail!("need docker or limactl for linux-test")
+}
+
+/// Build the example Search extension (examples/search-extension-color)
+/// and put its program where its bundle's `Info.entry` says. Copy
+/// `examples/bundles/color.app` to `/Applications` to try it.
+fn bundle_color() -> Result<()> {
+    run("cargo", &["build", "--release", "-p", "search-extension-color"])?;
+    let built = target_dir()?.join("release/iliada-search-color");
+    let dest = PathBuf::from("examples/bundles/color.app/Contents/Root/usr/bin/iliada-search-color");
+    std::fs::copy(&built, &dest)?;
+    eprintln!("{} is ready", dest.display());
+    Ok(())
 }
 
 /// Cargo's effective target directory (honours `build.target-dir` and `CARGO_TARGET_DIR`).

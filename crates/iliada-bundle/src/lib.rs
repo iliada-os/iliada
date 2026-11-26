@@ -3,7 +3,8 @@
 //! ```text
 //! Name.app/
 //!   Contents/
-//!     Info.toml          identity, entry point, isolation tier   (Info)
+//!     Info.toml          identity, entry point, isolation tier,  (Info)
+//!                        and [search] for a Search extension
 //!     Permissions.toml   capabilities the app may *ask* for      (Permissions)
 //!     Provenance.toml    where every byte came from              (Provenance)
 //!     Executables/       launcher entry points (what the shell runs)
@@ -25,6 +26,7 @@ mod permissions;
 pub mod policy;
 pub mod processor;
 mod provenance;
+pub mod search;
 
 pub use error::BundleError;
 pub use info::{Info, IsolationTier};

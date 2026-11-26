@@ -9,9 +9,12 @@
 //!
 //! * Super: search apps, files and folders, Settings, agora, answers, and
 //!   open windows (choosing one switches to it; `w ` lists only windows).
+//!   An extension's keyword and a space ("color #ff0000") show that
+//!   extension's results.
 //! * Super+O: ask Homer.
 //! * Super+V: clipboard history (the last 200 copies).
-//! * Space: Quick Look preview of the selected result.
+//! * Space (before typing, or Shift+Space): Quick Look preview of the
+//!   selected result. Once something is typed, Space types a space.
 //! * Drag a file out of the results, or drop a file on the panel for
 //!   Open With, Move to, Copy Path, or Ask Homer.
 //!
@@ -163,8 +166,12 @@ enum Message {
     HomerOn(bool),
     /// After a restore, paste into the previous window (the overlay is gone).
     Paste,
-    /// Space: open or close Quick Look.
-    TogglePreview,
+    /// Space: open or close Quick Look (`true`: Shift+Space, even while
+    /// typing).
+    TogglePreview(bool),
+    /// An extension's results for query number `generation` (`None`: replaced by
+    /// a newer query).
+    ExtensionResults(u64, Option<Vec<Hit>>),
     /// A preview finished loading; ignore it if `gen` is stale.
     PreviewReady(u64, Option<iliada_search::preview::Preview>),
     /// Files (or text) dropped onto the panel.
@@ -199,6 +206,14 @@ struct App {
     dropped: Vec<PathBuf>,
     /// Files waiting for a folder, after "Move to".
     moving: Vec<PathBuf>,
+    /// The extension the query is for: its id and title.
+    extension: Option<(String, String)>,
+    /// What to ask that extension next (set by `refresh`).
+    extension_query: Option<String>,
+    /// Counts extension queries: only the newest one's results are shown.
+    extension_gen: u64,
+    /// An extension ran while the panel was open (stop it on close).
+    extension_used: bool,
 }
 
 impl App {
@@ -261,8 +276,21 @@ impl App {
                 }
             },
             Mode::Search => {
+                self.extension = None;
+                self.extension_query = None;
                 let req = Request::Search { query: self.query.clone(), homer: self.homer, limit: ROWS };
                 match self.call(&req) {
+                    Some(iliada_search::Response::Extension { extension, title, keyword, placeholder, query }) => {
+                        self.hits = vec![if query.is_empty() {
+                            extension_ready(&title, &keyword, placeholder.as_deref())
+                        } else {
+                            extension_row(&title, fl!("extension-searching", title = title.as_str()))
+                        }];
+                        if !query.is_empty() {
+                            self.extension_query = Some(query);
+                        }
+                        self.extension = Some((extension, title));
+                    }
                     Some(iliada_search::Response::Hits { hits, micros }) => {
                         self.hits = hits;
                         self.micros = micros;
@@ -311,6 +339,13 @@ impl App {
     }
 
     fn hide(&mut self) -> Task<Message> {
+        // Extensions run only while the panel is open.
+        if std::mem::take(&mut self.extension_used) {
+            let _ = self.call(&Request::ExtensionsStop);
+        }
+        self.extension = None;
+        self.extension_query = None;
+        self.extension_gen += 1;
         self.preview_open = false;
         self.preview = None;
         self.dropped.clear();
@@ -389,6 +424,8 @@ impl App {
                     Task::none()
                 }
             },
+            // An extension's "searching" or "no results" row.
+            Action::Copy(text) if text.is_empty() => Task::none(),
             Action::Copy(text) => {
                 let hide = self.hide();
                 Task::batch([cosmic::iced::clipboard::write(text.clone()), hide])
@@ -497,6 +534,33 @@ impl App {
         Task::none()
     }
 
+    /// Ask the extension for what was typed after its keyword, on a
+    /// connection of its own (the service waits for the extension; typing
+    /// goes on meanwhile). Older queries' results are dropped.
+    fn ask_extension(&mut self) -> Task<Message> {
+        let (Some(query), Some((id, _))) = (self.extension_query.take(), self.extension.clone()) else {
+            return Task::none();
+        };
+        self.extension_gen += 1;
+        self.extension_used = true;
+        let generation = self.extension_gen;
+        cosmic::task::future(async move {
+            let reply = tokio::task::spawn_blocking(move || {
+                let mut c = Client::connect().ok()?;
+                c.call(&Request::ExtensionQuery { extension: id, query }).ok()
+            })
+            .await
+            .ok()
+            .flatten();
+            let hits = match reply {
+                Some(iliada_search::Response::Stale) => None,
+                Some(iliada_search::Response::Hits { hits, .. }) => Some(hits),
+                _ => Some(Vec::new()),
+            };
+            Message::ExtensionResults(generation, hits)
+        })
+    }
+
     fn request_preview(&mut self) -> Task<Message> {
         if !self.preview_open {
             return Task::none();
@@ -536,7 +600,13 @@ impl App {
         if i == self.selected && more && self.extras_of.is_none() {
             row = row.push(widget::text::caption(fl!("tab-for-more")));
         }
-        row = row.push(widget::text::caption(i18n::kind_label(hit.kind)));
+        // An extension's results are labelled with its title.
+        let label = if hit.kind == Kind::Extension && !hit.source.is_empty() {
+            hit.source.clone()
+        } else {
+            i18n::kind_label(hit.kind)
+        };
+        row = row.push(widget::text::caption(label));
         let selected = i == self.selected;
         let content = widget::container(row)
             .padding([spacing.space_xxs, spacing.space_s])
@@ -695,6 +765,24 @@ impl AsMimeTypes for DragPayload {
             Self::Text(_) => None,
         }
     }
+}
+
+/// A row for an extension that is not a result: "Searching GitHub…", "No
+/// results from GitHub". Choosing it does nothing.
+fn extension_row(title: &str, text: String) -> Hit {
+    let mut h = Hit::new(Kind::Extension, text, Action::Copy(String::new())).icon_name("system-search-symbolic");
+    h.source = title.to_owned();
+    h
+}
+
+/// The keyword and a space, nothing after it yet: what to type, and what
+/// the extension will see.
+fn extension_ready(title: &str, keyword: &str, placeholder: Option<&str>) -> Hit {
+    let text = match placeholder {
+        Some(p) if !p.trim().is_empty() => p.to_owned(),
+        _ => fl!("extension-type", title = title),
+    };
+    extension_row(title, text).subtitle(fl!("extension-sees-only", title = title, keyword = keyword))
 }
 
 fn homer_off() -> Hit {
@@ -880,6 +968,10 @@ impl cosmic::Application for App {
             ignore_space: false,
             dropped: Vec::new(),
             moving: Vec::new(),
+            extension: None,
+            extension_query: None,
+            extension_gen: 0,
+            extension_used: false,
         };
         let homer = cosmic::task::future(async {
             Message::HomerOn(iliada_system::client::status().await.map(|s| s.assistant.enabled).unwrap_or(false))
@@ -900,7 +992,10 @@ impl cosmic::Application for App {
                     Key::Named(Named::ArrowDown) => Some(Message::Down),
                     Key::Named(Named::Tab) => Some(Message::Extras),
                     Key::Named(Named::Enter) if modifiers.contains(Modifiers::CTRL) => Some(Message::Reveal),
-                    Key::Character(c) if c == " " && modifiers.is_empty() => Some(Message::TogglePreview),
+                    Key::Character(c) if c == " " && modifiers.is_empty() => Some(Message::TogglePreview(false)),
+                    Key::Character(c) if c == " " && modifiers == Modifiers::SHIFT => {
+                        Some(Message::TogglePreview(true))
+                    }
                     _ => None,
                 }
             }
@@ -934,7 +1029,8 @@ impl cosmic::Application for App {
                 if q != self.query {
                     self.query = q;
                     self.refresh();
-                    return self.request_preview();
+                    let ask = self.ask_extension();
+                    return Task::batch([self.request_preview(), ask]);
                 }
             }
             Message::Up => {
@@ -1005,7 +1101,10 @@ impl cosmic::Application for App {
                     return self.hide();
                 }
             }
-            Message::TogglePreview => {
+            // Once something is typed, Space types a space (keywords, `w `,
+            // several words); Shift+Space still previews.
+            Message::TogglePreview(false) if !self.preview_open && !self.query.is_empty() => {}
+            Message::TogglePreview(_) => {
                 self.ignore_space = true;
                 if self.preview_open {
                     self.preview_open = false;
@@ -1013,6 +1112,19 @@ impl cosmic::Application for App {
                     self.preview_loading = false;
                 } else {
                     self.preview_open = true;
+                    return self.request_preview();
+                }
+            }
+            Message::ExtensionResults(generation, hits) => {
+                if generation == self.extension_gen
+                    && let (Some(hits), Some((_, title))) = (hits, self.extension.as_ref())
+                {
+                    self.hits = if hits.is_empty() {
+                        vec![extension_row(title, fl!("extension-no-results", title = title.as_str()))]
+                    } else {
+                        hits
+                    };
+                    self.selected = 0;
                     return self.request_preview();
                 }
             }
