@@ -32,25 +32,7 @@ pub fn focused_app() -> Option<String> {
 
 /// `lswt -j`: looks for `activated`, `focused`, or a `state` list.
 pub fn focused_app_from_json(text: &str) -> Option<String> {
-    let v: serde_json::Value = serde_json::from_str(text).ok()?;
-    let list = v.get("toplevels").cloned().unwrap_or(v);
-    for t in list.as_array()? {
-        let app = ["app-id", "app_id", "appid"].iter().find_map(|k| t.get(*k).and_then(|x| x.as_str())).unwrap_or("");
-        if app.is_empty() {
-            continue;
-        }
-        let on = t.get("activated").and_then(|x| x.as_bool()).unwrap_or(false)
-            || t.get("focused").and_then(|x| x.as_bool()).unwrap_or(false)
-            || t.get("state").and_then(|x| x.as_array()).is_some_and(|a| {
-                a.iter().any(|s| {
-                    s.as_str().is_some_and(|s| s.eq_ignore_ascii_case("activated") || s.eq_ignore_ascii_case("focused"))
-                })
-            });
-        if on {
-            return Some(app.to_owned());
-        }
-    }
-    None
+    iliada_types::toplevel::focused_app_id(text)
 }
 
 struct State {

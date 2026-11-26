@@ -8,6 +8,7 @@
 
 mod app_id;
 mod capability;
+pub mod toplevel;
 
 pub use app_id::{AppId, AppIdError};
 pub use capability::{Capability, ClipboardAccess, FileScope, KnownDir, LocationPrecision};

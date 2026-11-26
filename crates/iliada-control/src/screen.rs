@@ -16,34 +16,7 @@ use tokio::process::Command;
 /// Screenshots are scaled down to at most this width for the model.
 pub const MAX_WIDTH: u32 = 1366;
 
-/// A window on the screen (from the compositor, so also windows that have
-/// no accessibility).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Toplevel {
-    pub title: String,
-    pub app_id: String,
-    pub identifier: String,
-}
-
-/// `lswt -j`: tolerant of the field names lswt's versions use.
-pub fn parse_lswt(json_text: &str) -> Vec<Toplevel> {
-    let v: Value = serde_json::from_str(json_text).unwrap_or(Value::Null);
-    let list = v.get("toplevels").cloned().unwrap_or(v);
-    list.as_array()
-        .into_iter()
-        .flatten()
-        .map(|t| {
-            let get = |keys: &[&str]| {
-                keys.iter().find_map(|k| t.get(*k).and_then(Value::as_str)).unwrap_or_default().to_owned()
-            };
-            Toplevel {
-                title: get(&["title"]),
-                app_id: get(&["app-id", "app_id", "appid"]),
-                identifier: get(&["identifier", "id"]),
-            }
-        })
-        .collect()
-}
+pub use iliada_types::toplevel::{Toplevel, parse_lswt};
 
 pub async fn toplevels() -> Vec<Toplevel> {
     match Command::new("lswt").arg("-j").stdin(Stdio::null()).output().await {
@@ -54,19 +27,8 @@ pub async fn toplevels() -> Vec<Toplevel> {
 
 /// Windows Homer must never be shown or clicked through the screen: the
 /// prompts where the person decides (permissions, the portal's consent,
-/// passwords) and Homer's own banner.
-pub const PROTECTED_APP_IDS: [&str; 6] = [
-    "org.iliada.Prompt",
-    "iliada-prompt",
-    "org.iliada.HomerBanner",
-    "xdg-desktop-portal-cosmic",
-    "com.system76.CosmicOsd",
-    "cosmic-osd",
-];
-
-pub fn protected_open(tops: &[Toplevel]) -> Option<&Toplevel> {
-    tops.iter().find(|t| PROTECTED_APP_IDS.iter().any(|p| t.app_id.eq_ignore_ascii_case(p)))
-}
+/// passwords) and Homer's own banner. Search never lists them either.
+pub use iliada_types::toplevel::{PROTECTED_APP_IDS, is_protected, protected_open};
 
 /// A screenshot for the model: PNG, scaled down; `scale` turns its pixels
 /// back into the screen's logical pixels.
@@ -97,7 +59,7 @@ pub async fn screenshot(window: Option<&str>) -> Result<Shot> {
             .iter()
             .find(|t| t.title.to_lowercase().contains(&needle) || t.app_id.to_lowercase() == needle)
             .with_context(|| format!("no window called {w:?} is open"))?;
-        if PROTECTED_APP_IDS.iter().any(|p| t.app_id.eq_ignore_ascii_case(p)) {
+        if is_protected(&t.app_id) {
             bail!("that window is one only the person may look at");
         }
         cmd.args(["-T", &t.identifier]);

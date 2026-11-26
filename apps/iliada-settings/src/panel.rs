@@ -278,6 +278,8 @@ pub enum Message {
     ClipExclude(String, bool),
     ClipClear,
     ClipClearConfirmed,
+    /// Search lists open windows, or not.
+    ShowWindows(bool),
     /// Log out (to see a new language).
     LogOut,
     /// COSMIC Settings' keyboard page (layouts, shortcuts).
@@ -323,6 +325,8 @@ pub struct Panel {
     clip_enabled: bool,
     clip_exclude: Vec<String>,
     confirm_clear_clipboard: bool,
+    /// Search shows open windows (`~/.config/iliada/search.toml`).
+    show_windows: bool,
 }
 
 fn load_status() -> Task<Message> {
@@ -673,6 +677,7 @@ impl Panel {
     fn privacy(&self) -> Element<'_, Message> {
         let mut items: Vec<Element<_>> = vec![info(fl!("privacy-intro-title"), Some(fl!("privacy-intro")))];
         items.push(self.clipboard_section());
+        items.push(self.search_section());
         let by = |label: String, v: PrivacyBy| {
             if self.privacy_by == v {
                 widget::button::suggested(label).on_press(Message::PrivacyBy(v))
@@ -952,6 +957,17 @@ impl Panel {
         section.into()
     }
 
+    fn search_section(&self) -> Element<'_, Message> {
+        settings::section()
+            .title(fl!("search-section"))
+            .add(
+                settings::item::builder(fl!("show-open-windows"))
+                    .description(fl!("show-open-windows-desc"))
+                    .toggler(self.show_windows, Message::ShowWindows),
+            )
+            .into()
+    }
+
     fn load_clipboard(&mut self) {
         let (enabled, exclude) = load_clipboard_settings();
         self.clip_enabled = enabled;
@@ -1224,6 +1240,7 @@ impl Panel {
             clip_enabled: true,
             clip_exclude: Vec::new(),
             confirm_clear_clipboard: false,
+            show_windows: true,
         }
     }
 
@@ -1251,6 +1268,7 @@ impl Panel {
             self.extra_isolation = load_extra_isolation();
             self.load_permissions();
             self.load_clipboard();
+            self.show_windows = load_search_settings().windows;
         }
         load_status()
     }
@@ -1587,6 +1605,10 @@ impl Panel {
                 }
                 Err(e) => self.error = Some(fl!("clipboard-history-setting-failed", error = format!("{e:#}"))),
             },
+            Message::ShowWindows(on) => match set_show_windows(on) {
+                Ok(()) => self.show_windows = on,
+                Err(e) => self.error = Some(fl!("search-setting-failed", error = format!("{e:#}"))),
+            },
             Message::ClipClear => self.confirm_clear_clipboard = true,
             Message::ClipClearConfirmed => {
                 self.confirm_clear_clipboard = false;
@@ -1747,6 +1769,26 @@ fn set_clipboard_excluded(app: &str, exclude: bool) -> anyhow::Result<()> {
     } else {
         cfg.exclude.retain(|e| !clip_excludes(e, app));
     }
+    cfg.save(&path)
+}
+
+fn load_search_settings() -> iliada_search::windows::Config {
+    iliada_search::windows::Config::default_path().map(|p| iliada_search::windows::Config::load(&p)).unwrap_or_default()
+}
+
+/// Through the search service when it runs (it applies the change at once
+/// and saves it), else straight to the file it reads when it starts.
+fn set_show_windows(on: bool) -> anyhow::Result<()> {
+    use iliada_search::proto::{Client, Request, Response};
+    if let Ok(mut c) = Client::connect() {
+        match c.call(&Request::ShowWindows { enabled: on })? {
+            Response::Error { message } => anyhow::bail!(message),
+            _ => return Ok(()),
+        }
+    }
+    let path = iliada_search::windows::Config::default_path().ok_or_else(|| anyhow::anyhow!("HOME is not set"))?;
+    let mut cfg = iliada_search::windows::Config::load(&path);
+    cfg.windows = on;
     cfg.save(&path)
 }
 

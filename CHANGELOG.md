@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Switch windows from Search**: type part of a window's title or its
+  app's name and choose it to go to that window, even on another
+  workspace or minimized. Like Alt+Tab, but you type to find the window.
+  `w ` (w and a space) lists only open windows, the most recently used
+  first. An open window comes before its app's "open a new window" row.
+  Permission prompts and Homer's banner are never listed, and sandboxed
+  apps cannot see the list. Settings → Privacy → Search → **Show open
+  windows** turns it off.
 - **Homer can use your other apps**, without any extra setup. He reads
   and presses the controls of apps that describe themselves, takes a
   screenshot and moves a pointer and keyboard when they do not, and has

@@ -68,6 +68,14 @@ pub enum Request {
     PreviewClipboard {
         id: u64,
     },
+    /// Switch to an open window (a `w ` result).
+    FocusWindow {
+        identifier: String,
+    },
+    /// Settings → Privacy → Search: show open windows or not.
+    ShowWindows {
+        enabled: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

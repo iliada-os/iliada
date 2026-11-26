@@ -13,12 +13,13 @@
 //! * **agora** apps not installed yet ([`agora`]).
 //! * **Answers**: arithmetic, units and dates ([`calc`]).
 //! * **Recent** files and what you open most ([`usage`], [`recent`]).
+//! * **Open windows**: choosing one switches to it ([`windows`]).
 //!
 //! * **Clipboard history** (Super+V): the last 200 copies, encrypted, skipping
 //!   secrets and excluded apps ([`clipboard`]).
 //!
-//! Prefixes: `>` runs a command in Terminal, `?` searches the web, `/` and
-//! `~/` browse paths. When nothing good is found and Homer is on, the last
+//! Prefixes: `>` runs a command in Terminal, `?` searches the web, `w `
+//! lists open windows, `/` and `~/` browse paths. When nothing good is found and Homer is on, the last
 //! row asks Homer.
 //!
 //! The overlay (`iliada-search-overlay`, a libcosmic layer-shell surface)
@@ -38,6 +39,7 @@ pub mod proto;
 pub mod recent;
 pub mod settings;
 pub mod usage;
+pub mod windows;
 
 use std::path::PathBuf;
 
@@ -60,6 +62,7 @@ pub enum Kind {
     Web,
     Command,
     Clipboard,
+    Window,
 }
 
 impl Kind {
@@ -77,6 +80,7 @@ impl Kind {
             Kind::Web => "Web",
             Kind::Command => "Terminal",
             Kind::Clipboard => "Clipboard",
+            Kind::Window => "Window",
         }
     }
 }
@@ -116,6 +120,9 @@ pub enum Action {
     MoveTo(PathBuf),
     /// Open each of these files with its default app.
     OpenAll(Vec<PathBuf>),
+    /// Switch to this open window (its ext-foreign-toplevel identifier):
+    /// its workspace, restored if minimized.
+    FocusWindow { identifier: String },
 }
 
 /// One row of results.

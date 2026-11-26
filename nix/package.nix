@@ -18,7 +18,12 @@ rustPlatform.buildRustPackage {
       ../nix/intents
     ];
   };
-  cargoLock.lockFile = ../Cargo.lock;
+  cargoLock = {
+    lockFile = ../Cargo.lock;
+    # cosmic-protocols (Search switches windows with COSMIC's toplevel
+    # management), the same revision the desktop apps use.
+    allowBuiltinFetchGit = true;
+  };
 
   # zstd: used by agora's tests (archive fixtures) and the catalog builder.
   nativeBuildInputs = [ pkg-config ];

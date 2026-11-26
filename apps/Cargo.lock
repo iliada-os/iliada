@@ -3084,10 +3084,12 @@ dependencies = [
  "anyhow",
  "chacha20poly1305",
  "chrono",
+ "cosmic-protocols",
  "getrandom 0.3.4",
  "ignore",
  "iliada-catalog",
  "iliada-store",
+ "iliada-types",
  "memchr",
  "notify",
  "nucleo-matcher",
@@ -3098,6 +3100,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "wayland-client",
+ "wayland-protocols",
  "wayland-protocols-wlr",
 ]
 
@@ -3206,6 +3209,7 @@ name = "iliada-types"
 version = "0.2.7"
 dependencies = [
  "serde",
+ "serde_json",
  "thiserror 2.0.21",
 ]
 

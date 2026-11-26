@@ -219,6 +219,10 @@ clipboard-history-clear-ellipsis = Clear History…
 clipboard-history-cleared = Clipboard history is empty.
 clipboard-history-clear-failed = Couldn't clear clipboard history: { $error }
 clipboard-history-setting-failed = Couldn't change clipboard history: { $error }
+search-section = Search
+show-open-windows = Show open windows
+show-open-windows-desc = Type part of a window's title or its app's name in Search to switch to it, or type w and a space to list every open window. The list stays on this computer, and sandboxed apps cannot read it.
+search-setting-failed = Couldn't change the Search setting: { $error }
 clipboard-exclude = Don't save copies from these apps
 clipboard-exclude-desc = Useful for password managers and banking apps. Copies marked secret are always skipped, even from apps that are not listed.
 

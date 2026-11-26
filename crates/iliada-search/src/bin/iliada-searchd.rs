@@ -14,6 +14,7 @@ use iliada_search::clipboard::Store;
 use iliada_search::files::{FileIndex, skipped};
 use iliada_search::proto::{Request, Response, socket_path};
 use iliada_search::usage::Usage;
+use iliada_search::windows::{self, Focus};
 use iliada_search::{Engine, actions, agora, apps};
 use notify::{EventKind, RecursiveMode, Watcher};
 
@@ -38,7 +39,7 @@ fn clip(store: &Mutex<Store>) -> std::sync::MutexGuard<'_, Store> {
     store.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn serve(engine: Arc<Engine>, store: Arc<Mutex<Store>>, stream: UnixStream) {
+fn serve(engine: Arc<Engine>, store: Arc<Mutex<Store>>, focus: Arc<Focus>, stream: UnixStream) {
     let Ok(read) = stream.try_clone() else { return };
     let mut writer = stream;
     for line in BufReader::new(read).lines() {
@@ -158,6 +159,24 @@ fn serve(engine: Arc<Engine>, store: Arc<Mutex<Store>>, stream: UnixStream) {
                     None => Response::Error { message: "that copy is no longer in the history".into() },
                 }
             }
+            Ok(Request::FocusWindow { identifier }) => match focus.focus(&identifier) {
+                Ok(()) => Response::Done,
+                Err(e) => Response::Error { message: format!("{e:#}") },
+            },
+            Ok(Request::ShowWindows { enabled }) => {
+                engine.show_windows.store(enabled, Ordering::Relaxed);
+                match windows::Config::default_path() {
+                    Some(path) => {
+                        let mut cfg = windows::Config::load(&path);
+                        cfg.windows = enabled;
+                        match cfg.save(&path) {
+                            Ok(()) => Response::Done,
+                            Err(e) => Response::Error { message: format!("{e:#}") },
+                        }
+                    }
+                    None => Response::Error { message: "HOME is not set".into() },
+                }
+            }
             Err(e) => Response::Error { message: format!("bad request: {e}") },
         };
         let Ok(mut out) = serde_json::to_vec(&reply) else { return };
@@ -259,6 +278,9 @@ fn main() -> Result<()> {
         iliada_search::recent::default_path(),
     ));
     *engine.installed.write().unwrap_or_else(|e| e.into_inner()) = agora::installed(&bundle_dirs());
+    let show_windows =
+        windows::Config::default_path().as_deref().map(windows::Config::load).unwrap_or_default().windows;
+    engine.show_windows.store(show_windows, Ordering::Relaxed);
 
     let store = match Store::default_paths() {
         Some((dir, cfg)) => match Store::open(dir, cfg) {
@@ -279,6 +301,17 @@ fn main() -> Result<()> {
         std::thread::spawn(move || {
             if let Err(e) = iliada_search::clipboard_watch::watch(store) {
                 tracing::warn!("not watching the clipboard: {e:#}");
+            }
+        });
+    }
+
+    // Open windows: follow the compositor's list, to switch to one.
+    let focus = Arc::new(Focus::default());
+    {
+        let (engine, focus) = (engine.clone(), focus.clone());
+        std::thread::spawn(move || {
+            if let Err(e) = windows::watch(engine, focus) {
+                tracing::warn!("not following open windows: {e:#}");
             }
         });
     }
@@ -359,8 +392,8 @@ fn main() -> Result<()> {
     for stream in listener.incoming() {
         match stream {
             Ok(s) => {
-                let (engine, store) = (engine.clone(), store.clone());
-                std::thread::spawn(move || serve(engine, store, s));
+                let (engine, store, focus) = (engine.clone(), store.clone(), focus.clone());
+                std::thread::spawn(move || serve(engine, store, focus, s));
             }
             Err(e) => tracing::warn!("accept: {e}"),
         }
