@@ -37,7 +37,11 @@
   selected result (text in a mono font, with light colouring of comments and
   strings; images; the first page of a PDF when pdftoppm is there; a folder's
   contents; an app's details). The preview loads in the background, so typing
-  is never blocked. Tiling's
+  is never blocked. Drag a file, folder or text out of the results into
+  Files, the desktop or another app (`text/uri-list` and `text/plain`).
+  Drop a file onto Search for Open With, Move to, Copy Path and Ask
+  Homer; opening a dropped file with a sandboxed app binds just that file
+  (the same as opening it with the app in the usual way). Tiling's
   "toggle orientation" moved to Super+Shift+O.
 - **A new Search icon** in the dock, a short bronze magnifier in the
   Spotlight style.

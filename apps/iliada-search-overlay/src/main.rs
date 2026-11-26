@@ -11,19 +11,23 @@
 //! * Super+O: ask Homer.
 //! * Super+V: clipboard history (the last 200 copies).
 //! * Space: Quick Look preview of the selected result.
+//! * Drag a file out of the results, or drop a file on the panel for
+//!   Open With, Move to, Copy Path, or Ask Homer.
 //!
 //! Keys: ↑/↓ choose, Enter opens, Tab (or →) shows what else a file
-//! offers (Open With, Reveal in Files, Copy Path), Ctrl+Enter reveals a
-//! file in Files, Esc closes.
+//! offers (Open With, Reveal in Files, Copy Path, Move to), Ctrl+Enter
+//! reveals a file in Files, Esc closes.
 //!
 //! It is a layer-shell surface (above every window, like COSMIC's own
 //! launcher) covering the screen, transparent except for the panel; a
 //! click outside the panel closes it.
 
-use std::path::PathBuf;
+use std::borrow::Cow;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use cosmic::app::{Settings, Task};
+use cosmic::iced::clipboard::mime::AsMimeTypes;
 use cosmic::iced::keyboard::{Key, Modifiers, key::Named};
 use cosmic::iced::platform_specific::runtime::wayland::layer_surface::{IcedOutput, SctkLayerSurfaceSettings};
 use cosmic::iced::platform_specific::shell::commands::layer_surface::{
@@ -162,6 +166,8 @@ enum Message {
     TogglePreview,
     /// A preview finished loading; ignore it if `gen` is stale.
     PreviewReady(u64, Option<iliada_search::preview::Preview>),
+    /// Files (or text) dropped onto the panel.
+    Dropped(String, Vec<u8>),
     Nothing,
 }
 
@@ -188,6 +194,10 @@ struct App {
     preview_stamp: u64,
     /// Space was used to toggle the preview: drop the space the field would add.
     ignore_space: bool,
+    /// Files just dropped onto the panel, if we are showing their actions.
+    dropped: Vec<PathBuf>,
+    /// Files waiting for a folder, after "Move to".
+    moving: Vec<PathBuf>,
 }
 
 impl App {
@@ -297,6 +307,8 @@ impl App {
     fn hide(&mut self) -> Task<Message> {
         self.preview_open = false;
         self.preview = None;
+        self.dropped.clear();
+        self.moving.clear();
         match self.surface.take() {
             Some(id) => destroy_layer_surface(id),
             None => Task::none(),
@@ -304,6 +316,30 @@ impl App {
     }
 
     fn activate(&mut self, hit: Hit) -> Task<Message> {
+        if let Action::MoveTo(src) = &hit.action {
+            self.moving = if self.dropped.contains(src) && self.dropped.len() > 1 {
+                self.dropped.clone()
+            } else {
+                vec![src.clone()]
+            };
+            self.extras_of = None;
+            self.query.clear();
+            let name = self
+                .moving
+                .iter()
+                .filter_map(|p| p.file_name())
+                .map(|n| n.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.note = Some(fl!("move-to-hint", name = name.as_str()));
+            self.refresh();
+            return Task::none();
+        }
+        if !self.moving.is_empty()
+            && let Some(dest) = hit.path().filter(|p| p.is_dir()).map(|p| p.to_owned())
+        {
+            return self.finish_move(dest);
+        }
         if !hit.key.is_empty() {
             let _ = self.call(&Request::Used { hit: hit.clone() });
         }
@@ -362,6 +398,85 @@ impl App {
         }
     }
 
+    fn finish_move(&mut self, dest: PathBuf) -> Task<Message> {
+        let srcs = std::mem::take(&mut self.moving);
+        let mut last = dest.clone();
+        for src in &srcs {
+            match actions::move_into(src, &dest) {
+                Ok(p) => last = p.parent().unwrap_or(&dest).to_owned(),
+                Err(e) => {
+                    self.note = Some(fl!("move-failed", error = format!("{e:#}")));
+                    self.moving = srcs;
+                    return Task::none();
+                }
+            }
+        }
+        self.dropped.clear();
+        self.note = Some(fl!("moved-to", folder = crate::tilde_or_display(&last)));
+        self.refresh();
+        Task::none()
+    }
+
+    fn show_dropped(&mut self, paths: Vec<PathBuf>) -> Task<Message> {
+        let paths: Vec<PathBuf> = paths.into_iter().filter(|p| p.exists()).collect();
+        if paths.is_empty() {
+            return Task::none();
+        }
+        self.mode = Mode::Search;
+        self.dropped = paths.clone();
+        self.moving.clear();
+        self.extras_of = None;
+        let mut hits = Vec::new();
+        if paths.len() > 1 {
+            let n = paths.len();
+            let joined = paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\n");
+            hits.push(
+                Hit::new(Kind::Action, fl!("open-n-files", n = n), Action::OpenAll(paths.clone()))
+                    .subtitle(fl!("dropped-files", n = n))
+                    .icon_name("document-open-symbolic"),
+            );
+            hits.push(
+                Hit::new(Kind::Action, "Copy Path", Action::Copy(joined.clone())).icon_name("edit-copy-symbolic"),
+            );
+            hits.push(
+                Hit::new(Kind::Action, "Move to", Action::MoveTo(paths[0].clone()))
+                    .subtitle("Choose a folder")
+                    .icon_name("folder-symbolic"),
+            );
+            hits.push(
+                Hit::new(Kind::Action, "Ask Homer About It", Action::AskHomer(format!("About these files: {joined}")))
+                    .icon_name("org.iliada.Assistant"),
+            );
+        }
+        if let Some(iliada_search::Response::Hits { hits: more, .. }) =
+            self.call(&Request::OpenWith { path: paths[0].clone() })
+        {
+            if paths.len() == 1 {
+                hits = more;
+            } else {
+                for h in more {
+                    if !hits.iter().any(|x| x.title == h.title) {
+                        hits.push(h);
+                    }
+                }
+            }
+        } else if paths.len() == 1 {
+            hits = actions::extras(&iliada_search::engine::file_hit(&paths[0], paths[0].is_dir()));
+        }
+        if hits.is_empty() {
+            return Task::none();
+        }
+        let before = std::mem::replace(&mut self.hits, hits);
+        self.extras_of = Some((before, self.selected));
+        self.selected = 0;
+        self.note = Some(if paths.len() == 1 {
+            fl!("dropped-file", name = paths[0].file_name().and_then(|n| n.to_str()).unwrap_or("file"))
+        } else {
+            fl!("dropped-files", n = paths.len())
+        });
+        Task::none()
+    }
+
     fn request_preview(&mut self) -> Task<Message> {
         if !self.preview_open {
             return Task::none();
@@ -407,7 +522,13 @@ impl App {
             .padding([spacing.space_xxs, spacing.space_s])
             .width(Length::Fill)
             .class(cosmic::theme::Container::custom(move |t| row_style(t, selected)));
-        widget::mouse_area(content).on_press(Message::Activate(Some(i))).into()
+        let row: Element<'_, Message> = widget::mouse_area(content).on_press(Message::Activate(Some(i))).into();
+        if let Some(payload) = drag_payload(hit) {
+            let window = self.surface.unwrap_or(window::Id::RESERVED);
+            widget::dnd_source(row).drag_content(move || payload.clone()).window(window).into()
+        } else {
+            row
+        }
     }
 
     fn panel(&self) -> Element<'_, Message> {
@@ -439,12 +560,16 @@ impl App {
         for (i, h) in self.hits.iter().enumerate().take(ROWS) {
             col = col.push(self.row(i, h));
         }
-        let hint = match (&self.extras_of, self.mode) {
-            (Some(_), _) => fl!("hint-extras"),
-            (None, Mode::Homer) => fl!("hint-homer"),
-            (None, Mode::Clipboard) => fl!("hint-clipboard"),
-            (None, Mode::Search) if self.query.is_empty() => fl!("hint-search-empty"),
-            (None, Mode::Search) => fl!("hint-search", ms = format!("{:.1}", self.micros as f64 / 1000.0)),
+        let hint = if !self.moving.is_empty() {
+            fl!("hint-move-to")
+        } else {
+            match (&self.extras_of, self.mode) {
+                (Some(_), _) => fl!("hint-extras"),
+                (None, Mode::Homer) => fl!("hint-homer"),
+                (None, Mode::Clipboard) => fl!("hint-clipboard"),
+                (None, Mode::Search) if self.query.is_empty() => fl!("hint-search-empty"),
+                (None, Mode::Search) => fl!("hint-search", ms = format!("{:.1}", self.micros as f64 / 1000.0)),
+            }
         };
         col = col.push(widget::text::caption(if self.preview_open { fl!("preview-close") } else { hint }));
         let list = col.padding(spacing.space_s).width(Length::Fixed(WIDTH));
@@ -459,6 +584,8 @@ impl App {
             list.into()
         };
         let panel = widget::container(body).class(cosmic::theme::Container::custom(frosted));
+        let panel = widget::dnd_destination(panel, vec![Cow::from("text/uri-list"), Cow::from("text/plain")])
+            .on_finish(|mime, data, _action, _x, _y| Message::Dropped(mime, data));
         // The panel sits in the top third; a click anywhere else closes.
         let page = widget::column::with_capacity(3)
             .push(widget::space::vertical().height(Length::FillPortion(1)))
@@ -483,6 +610,70 @@ impl App {
             .padding(spacing.space_s)
             .width(Length::Fixed(PREVIEW_WIDTH))
             .into()
+    }
+}
+
+fn tilde_or_display(path: &Path) -> String {
+    iliada_search::tilde(path)
+}
+
+fn typed_folder(query: &str) -> Option<PathBuf> {
+    let q = query.trim();
+    if q.is_empty() {
+        return None;
+    }
+    let path = if let Some(rest) = q.strip_prefix("~/") {
+        iliada_search::home()?.join(rest)
+    } else if q == "~" {
+        iliada_search::home()?
+    } else {
+        PathBuf::from(q)
+    };
+    path.is_dir().then_some(path)
+}
+
+#[derive(Clone)]
+enum DragPayload {
+    Files(Vec<PathBuf>),
+    Text(String),
+}
+
+fn drag_payload(hit: &Hit) -> Option<DragPayload> {
+    if let Some(p) = hit.path() {
+        return Some(DragPayload::Files(vec![p.to_owned()]));
+    }
+    match &hit.action {
+        Action::Copy(t) | Action::AskHomer(t) => Some(DragPayload::Text(t.clone())),
+        Action::Url(u) => Some(DragPayload::Text(u.clone())),
+        _ if hit.kind == Kind::Clipboard && !hit.title.is_empty() => Some(DragPayload::Text(hit.title.clone())),
+        _ => None,
+    }
+}
+
+impl AsMimeTypes for DragPayload {
+    fn available(&self) -> Cow<'static, [String]> {
+        match self {
+            Self::Files(_) => Cow::Owned(vec!["text/uri-list".into(), "text/plain".into()]),
+            Self::Text(_) => Cow::Owned(vec!["text/plain".into()]),
+        }
+    }
+
+    fn as_bytes(&self, mime: &str) -> Option<Cow<'static, [u8]>> {
+        match self {
+            Self::Files(paths) => {
+                let uris = actions::uri_list(paths);
+                let plain = paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\n");
+                if mime == "text/uri-list" {
+                    Some(Cow::Owned(uris.into_bytes()))
+                } else if mime == "text/plain" {
+                    Some(Cow::Owned(plain.into_bytes()))
+                } else {
+                    None
+                }
+            }
+            Self::Text(t) if mime == "text/plain" => Some(Cow::Owned(t.as_bytes().to_vec())),
+            Self::Text(_) => None,
+        }
     }
 }
 
@@ -652,6 +843,8 @@ impl cosmic::Application for App {
             preview_loading: false,
             preview_stamp: 0,
             ignore_space: false,
+            dropped: Vec::new(),
+            moving: Vec::new(),
         };
         let homer = cosmic::task::future(async {
             Message::HomerOn(iliada_system::client::status().await.map(|s| s.assistant.enabled).unwrap_or(false))
@@ -720,6 +913,11 @@ impl cosmic::Application for App {
                 }
             }
             Message::Activate(i) => {
+                if i.is_none() && !self.moving.is_empty()
+                    && let Some(dest) = typed_folder(&self.query)
+                {
+                    return self.finish_move(dest);
+                }
                 let i = i.unwrap_or(self.selected);
                 if let Some(hit) = self.hits.get(i).cloned() {
                     return self.activate(hit);
@@ -758,9 +956,15 @@ impl cosmic::Application for App {
                     self.preview_open = false;
                     self.preview = None;
                     self.preview_loading = false;
+                } else if !self.moving.is_empty() {
+                    self.moving.clear();
+                    self.note = None;
+                    self.refresh();
                 } else if let Some((hits, selected)) = self.extras_of.take() {
                     self.hits = hits;
                     self.selected = selected;
+                    self.dropped.clear();
+                    self.note = None;
                 } else {
                     return self.hide();
                 }
@@ -793,6 +997,31 @@ impl cosmic::Application for App {
             }
             Message::Paste => {
                 let _ = iliada_search::clipboard::paste();
+            }
+            Message::Dropped(mime, data) => {
+                let paths = actions::parse_uri_list(&data);
+                if !paths.is_empty() && (mime.contains("uri-list") || paths.iter().any(|p| p.exists())) {
+                    return self.show_dropped(paths);
+                }
+                if let Ok(text) = String::from_utf8(data) {
+                    let text = text.trim();
+                    if !text.is_empty() {
+                        self.mode = Mode::Search;
+                        self.hits = vec![
+                            Hit::new(Kind::Action, "Copy", Action::Copy(text.to_owned()))
+                                .subtitle(text.to_owned())
+                                .icon_name("edit-copy-symbolic"),
+                            Hit::new(
+                                Kind::Action,
+                                "Ask Homer About It",
+                                Action::AskHomer(format!("About this: {text}")),
+                            )
+                            .icon_name("org.iliada.Assistant"),
+                        ];
+                        self.selected = 0;
+                        self.extras_of = Some((Vec::new(), 0));
+                    }
+                }
             }
             Message::Nothing => {}
         }
