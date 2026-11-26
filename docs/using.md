@@ -124,6 +124,12 @@ iliada search database
 iliada list                  # everything in agora, and what you have
 ```
 
+Search (Super) also takes extensions from agora: type an extension's
+keyword and a space, then what you want (`color teal`). Each one only
+sees what you type after its keyword. Settings → Privacy → Search lists
+them, and turns them off. To write one, see
+[search-extensions.md](search-extensions.md).
+
 ## Update
 
 Apps update on their own. Iliada itself: Settings → **Updates** →

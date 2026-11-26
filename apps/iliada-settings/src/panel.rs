@@ -280,6 +280,13 @@ pub enum Message {
     ClipClearConfirmed,
     /// Search lists open windows, or not.
     ShowWindows(bool),
+    /// Turn a Search extension on or off.
+    ExtensionOn(String, bool),
+    /// Start choosing another keyword for an extension.
+    ChangeKeyword(String),
+    KeywordInput(String),
+    SaveKeyword,
+    CancelKeyword,
     /// Log out (to see a new language).
     LogOut,
     /// COSMIC Settings' keyboard page (layouts, shortcuts).
@@ -327,6 +334,8 @@ pub struct Panel {
     confirm_clear_clipboard: bool,
     /// Search shows open windows (`~/.config/iliada/search.toml`).
     show_windows: bool,
+    /// Choosing a keyword for this extension: its id, and what is typed.
+    keyword_edit: Option<(String, String)>,
 }
 
 fn load_status() -> Task<Message> {
@@ -958,14 +967,88 @@ impl Panel {
     }
 
     fn search_section(&self) -> Element<'_, Message> {
-        settings::section()
-            .title(fl!("search-section"))
-            .add(
-                settings::item::builder(fl!("show-open-windows"))
-                    .description(fl!("show-open-windows-desc"))
-                    .toggler(self.show_windows, Message::ShowWindows),
-            )
-            .into()
+        let space = cosmic::theme::spacing();
+        let mut section = settings::section().title(fl!("search-section")).add(
+            settings::item::builder(fl!("show-open-windows"))
+                .description(fl!("show-open-windows-desc"))
+                .toggler(self.show_windows, Message::ShowWindows),
+        );
+        // Extensions from agora: each one's keyword, whether it can use the
+        // internet, on or off, and another keyword when two want the same.
+        section = section.add(info(fl!("search-extensions"), Some(fl!("search-extensions-desc"))));
+        let extensions = self.extensions();
+        if extensions.is_empty() {
+            section = section.add(info(fl!("search-extensions-none"), None));
+        }
+        for (ext, internet) in extensions {
+            let id = ext.id.clone();
+            let mut desc = fl!("search-extension-keyword", keyword = ext.keyword.as_str());
+            desc.push_str(" · ");
+            desc.push_str(&if internet {
+                fl!("search-extension-internet")
+            } else {
+                fl!("search-extension-no-internet")
+            });
+            if let Some(by) = &ext.clashes_with {
+                desc.push_str(" · ");
+                desc.push_str(&fl!("search-extension-clash", keyword = ext.keyword.as_str(), other = by.as_str()));
+            }
+            let change =
+                widget::button::standard(fl!("search-extension-change")).on_press(Message::ChangeKeyword(id.clone()));
+            let toggle = widget::toggler(ext.enabled).on_toggle(move |on| Message::ExtensionOn(id.clone(), on));
+            let controls = widget::row::with_capacity(2)
+                .push(change)
+                .push(toggle)
+                .spacing(space.space_xs)
+                .align_y(Alignment::Center);
+            section = section.add(settings::item::builder(ext.title.clone()).description(desc).control(controls));
+            if let Some((editing, text)) = &self.keyword_edit
+                && *editing == ext.id
+            {
+                let problem = keyword_problem(&self.programs, &ext.id, text.trim());
+                let input = widget::text_input(ext.declared_keyword.clone(), text)
+                    .on_input(Message::KeywordInput)
+                    .on_submit(|_| Message::SaveKeyword)
+                    .width(Length::Fill);
+                let row = widget::row::with_capacity(3)
+                    .push(input)
+                    .push(widget::button::standard(fl!("cancel")).on_press(Message::CancelKeyword))
+                    .push(
+                        widget::button::suggested(fl!("search-extension-save"))
+                            .on_press_maybe(problem.is_none().then_some(Message::SaveKeyword)),
+                    )
+                    .spacing(space.space_xs)
+                    .align_y(Alignment::Center);
+                section = section.add(settings::item_row(vec![row.into()]));
+                section = section.add(info(problem.unwrap_or_else(|| fl!("search-extension-keyword-hint")), None));
+            }
+        }
+        section.into()
+    }
+
+    /// Installed Search extensions, and whether each can use the internet
+    /// now (declared, and allowed in the permissions files).
+    fn extensions(&self) -> Vec<(iliada_bundle::search::Extension, bool)> {
+        self.programs
+            .iter()
+            .filter_map(|a| {
+                let ext = a.search.clone()?;
+                let internet = self.policy.report(a).search.is_some_and(|s| s.internet);
+                Some((ext, internet))
+            })
+            .collect()
+    }
+
+    /// Change the person's choices for one extension, then show them (the
+    /// search service notices the file within a few seconds).
+    fn change_extension(&mut self, id: &str, change: impl FnOnce(&mut iliada_bundle::search::Choice)) {
+        let Some(path) = iliada_bundle::search::Choices::default_path() else { return };
+        let mut choices = iliada_bundle::search::Choices::load(&path);
+        change(choices.extensions.entry(id.to_owned()).or_default());
+        match choices.save(&path) {
+            Ok(()) => self.load_permissions(),
+            Err(e) => self.error = Some(fl!("search-setting-failed", error = e.to_string())),
+        }
     }
 
     fn load_clipboard(&mut self) {
@@ -1241,6 +1324,7 @@ impl Panel {
             clip_exclude: Vec::new(),
             confirm_clear_clipboard: false,
             show_windows: true,
+            keyword_edit: None,
         }
     }
 
@@ -1605,6 +1689,27 @@ impl Panel {
                 }
                 Err(e) => self.error = Some(fl!("clipboard-history-setting-failed", error = format!("{e:#}"))),
             },
+            Message::ExtensionOn(id, on) => self.change_extension(&id, |c| c.enabled = on),
+            Message::ChangeKeyword(id) => {
+                let current = self.programs.iter().find(|a| a.id == id).and_then(|a| a.search.as_ref());
+                let text = current.map(|s| s.keyword.clone()).unwrap_or_default();
+                self.keyword_edit = Some((id, text));
+            }
+            Message::KeywordInput(text) => {
+                if let Some((_, t)) = self.keyword_edit.as_mut() {
+                    *t = text;
+                }
+            }
+            Message::CancelKeyword => self.keyword_edit = None,
+            Message::SaveKeyword => {
+                if let Some((id, text)) = self.keyword_edit.clone() {
+                    let keyword = text.trim().to_owned();
+                    if keyword_problem(&self.programs, &id, &keyword).is_none() {
+                        self.keyword_edit = None;
+                        self.change_extension(&id, |c| c.keyword = Some(keyword));
+                    }
+                }
+            }
             Message::ShowWindows(on) => match set_show_windows(on) {
                 Ok(()) => self.show_windows = on,
                 Err(e) => self.error = Some(fl!("search-setting-failed", error = format!("{e:#}"))),
@@ -1770,6 +1875,18 @@ fn set_clipboard_excluded(app: &str, exclude: bool) -> anyhow::Result<()> {
         cfg.exclude.retain(|e| !clip_excludes(e, app));
     }
     cfg.save(&path)
+}
+
+/// Why `keyword` can't be extension `id`'s, in words; `None` when it can.
+fn keyword_problem(programs: &[AppFacts], id: &str, keyword: &str) -> Option<String> {
+    use iliada_bundle::search::{KeywordError, keyword_free};
+    let all: Vec<iliada_bundle::search::Extension> = programs.iter().filter_map(|a| a.search.clone()).collect();
+    match keyword_free(&all, id, keyword) {
+        Ok(()) => None,
+        Err(KeywordError::Invalid) => Some(fl!("search-keyword-invalid")),
+        Err(KeywordError::Reserved) => Some(fl!("search-keyword-reserved", keyword = keyword)),
+        Err(KeywordError::Taken(by)) => Some(fl!("search-keyword-taken", keyword = keyword, other = by)),
+    }
 }
 
 fn load_search_settings() -> iliada_search::windows::Config {

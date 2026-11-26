@@ -1,0 +1,16 @@
+# An example Search extension (docs/search-extensions.md): type "color" and
+# a space in Search, then #ff0000, rgb(255, 0, 0) or a color name.
+# `cargo xtask bundle-color` builds its program into Root/usr/bin.
+id = "org.iliada.example.color"
+name = "Color"
+version = "0.1.0"
+executable = "color"
+entry = "usr/bin/iliada-search-color"
+runtime = "iliada-base-1"
+isolation = "namespace"
+categories = ["Utility"]
+
+[search]
+keyword = "color"
+title = "Color"
+placeholder = "#ff0000, rgb(255, 0, 0) or a color name"

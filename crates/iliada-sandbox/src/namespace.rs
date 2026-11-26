@@ -140,7 +140,7 @@ fn bwrap_prefix(spec: &SandboxSpec, host: &HostIsolationConfig, desktop: &HostDe
     // bwrap's "-try" skips only a missing source: a socket folder this user
     // may not enter (not in iliada-sandbox) would stop the app from starting.
     let broker = transport::broker_socket(&host.socket_dir, &spec.app_id);
-    if !std::fs::metadata(&broker).is_err_and(|e| e.kind() == std::io::ErrorKind::PermissionDenied) {
+    if spec.broker && !std::fs::metadata(&broker).is_err_and(|e| e.kind() == std::io::ErrorKind::PermissionDenied) {
         push(&["--ro-bind-try", &p(&broker), GUEST_BROKER_SOCKET]);
     }
 
@@ -205,6 +205,9 @@ fn bwrap_prefix(spec: &SandboxSpec, host: &HostIsolationConfig, desktop: &HostDe
         ("ILIADA_APP_ID", spec.app_id.as_str()),
     ];
     for (k, v) in env {
+        if k == "ILIADA_BROKER" && !spec.broker {
+            continue;
+        }
         push(&["--setenv", k, v]);
     }
     for (k, v) in &spec.env {
@@ -369,6 +372,7 @@ mod tests {
             grants: Default::default(),
             files: vec![],
             file_sources: Default::default(),
+            broker: true,
         };
         (dir, spec)
     }
@@ -399,6 +403,23 @@ mod tests {
         // The only writable bind is the data dir, and no display without a socket.
         assert_eq!(a.iter().filter(|x| *x == "--bind").count(), 1);
         assert!(!a.iter().any(|x| x.contains("wayland")));
+    }
+
+    #[test]
+    fn search_extensions_get_only_their_cache() {
+        // What iliada-run builds for a Search extension: no display, no
+        // grants, no broker, its cache folder as its home.
+        let (_d, mut spec) = fixture(NetworkPolicy::None, false);
+        spec.broker = false;
+        spec.data_dir = "/home/alice/.cache/iliada/search-extensions/org.debian.jq".into();
+        let a = bwrap_args(&spec, &HostIsolationConfig::example(), &HostDesktop::default());
+        assert!(!a.iter().any(|x| x == GUEST_BROKER_SOCKET || x == "ILIADA_BROKER"), "no broker");
+        assert!(!a.contains(&"--share-net".to_string()), "no network");
+        assert!(!a.iter().any(|x| x.contains("wayland") || x.contains("pipewire") || x.contains("pulse")));
+        assert!(!a.iter().any(|x| x.contains("/dev/video") || x.contains("/bus")), "no camera, no D-Bus");
+        assert_eq!(after(&a, "--bind", "/home/alice/.cache/iliada/search-extensions/org.debian.jq"), Some("/home/app"));
+        assert_eq!(a.iter().filter(|x| *x == "--bind").count(), 1, "the cache is the only writable folder");
+        assert!(a.contains(&"--clearenv".to_string()) && a.contains(&"--die-with-parent".to_string()));
     }
 
     #[test]

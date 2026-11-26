@@ -58,6 +58,17 @@ pub struct AppEntry {
     /// the catalog predates the list (not "asks for nothing").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permissions: Option<Vec<String>>,
+    /// A Search extension (ADR 0009): its keyword and title, so agora can
+    /// say before installing what it will see.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search: Option<SearchEntry>,
+}
+
+/// An extension's `[search]`, as the catalog lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchEntry {
+    pub keyword: String,
+    pub title: String,
 }
 
 /// Archives by processor, named as Rust names them (`std::env::consts::ARCH`).
@@ -143,6 +154,7 @@ impl Catalog {
                     archive: Some(x86),
                     archives: Archives::default(),
                     permissions: None,
+                    search: None,
                     ..a.clone()
                 })
             })
@@ -225,7 +237,20 @@ mod tests {
             archives,
             icon: None,
             permissions: None,
+            search: None,
         }
+    }
+
+    #[test]
+    fn search_extensions_are_listed_and_left_out_for_old_readers() {
+        let mut e = entry(None, Archives { x86_64: Some(archive("x86")), aarch64: None });
+        assert!(!serde_json::to_string(&e).unwrap().contains("search"), "absent unless it is one");
+        e.search = Some(SearchEntry { keyword: "color".into(), title: "Color".into() });
+        let json = serde_json::to_string(&e).unwrap();
+        assert!(json.contains(r#""search":{"keyword":"color","title":"Color"}"#), "{json}");
+        assert_eq!(serde_json::from_str::<AppEntry>(&json).unwrap(), e);
+        let cat = Catalog { format: FORMAT, generated: 1, apps: vec![e] };
+        assert!(cat.legacy().apps[0].search.is_none());
     }
 
     #[test]

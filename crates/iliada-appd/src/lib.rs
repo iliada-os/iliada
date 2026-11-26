@@ -264,6 +264,7 @@ mod tests {
             network: false,
             categories: if gui { vec!["Utility".into()] } else { vec![] },
             mime_types: vec![],
+            search: None,
         };
         Bundle::write_manifests(&l, &info, &Permissions::default(), None).unwrap();
         l.root().to_owned()

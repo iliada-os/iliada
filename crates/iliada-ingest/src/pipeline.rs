@@ -494,6 +494,7 @@ impl Ingestor {
             network: self.cfg.network || desktop.as_ref().is_some_and(internet_app),
             categories: desktop.as_ref().map(|d| d.categories.clone()).unwrap_or_default(),
             mime_types: desktop.as_ref().map(|d| d.mime_types.clone()).unwrap_or_default(),
+            search: None,
         };
         for (dst, src) in &self.cfg.copies {
             copy_within(&layout.fhs_root(), src, dst).with_context(|| format!("recipe copy {src} -> {dst}"))?;

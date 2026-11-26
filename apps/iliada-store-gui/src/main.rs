@@ -48,6 +48,18 @@ fn capabilities(app: &AppEntry) -> String {
     }
 }
 
+/// What a Search extension will see, in plain words (ADR 0009). Only a
+/// keyword Iliada would accept is shown.
+fn search_extension(app: &AppEntry) -> Option<String> {
+    let s = app.search.as_ref().filter(|s| iliada_bundle::search::check_keyword(&s.keyword).is_ok())?;
+    let keyword = s.keyword.as_str();
+    Some(if app.network {
+        fl!("search-extension-card-internet", keyword = keyword)
+    } else {
+        fl!("search-extension-card", keyword = keyword)
+    })
+}
+
 fn main() -> cosmic::iced::Result {
     let settings = Settings::default().size(Size::new(960.0, 720.0));
     // `--search <words>` opens agora with that search (Homer's "show in
@@ -131,13 +143,14 @@ impl App {
             meta.push_str("  ·  ");
             meta.push_str(&fl!("uses-internet"));
         }
-        let text = widget::column::with_capacity(5)
+        let mut text = widget::column::with_capacity(6)
             .push(widget::text::title4(app.name.as_str()))
             .push(widget::text::body(app.summary.as_str()))
-            .push(widget::text::caption(meta))
-            .push(widget::text::caption(capabilities(app)))
-            .spacing(spacing.space_xxxs)
-            .width(Length::Fill);
+            .push(widget::text::caption(meta));
+        if let Some(line) = search_extension(app) {
+            text = text.push(widget::text::caption(line));
+        }
+        let text = text.push(widget::text::caption(capabilities(app))).spacing(spacing.space_xxxs).width(Length::Fill);
 
         let installed = self.installed.get(&app.id);
         let action: Element<_> = match self.status.get(&app.id) {

@@ -11,6 +11,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{Context, Result};
 use iliada_search::clipboard::Store;
+use iliada_search::extensions::{self, Outcome};
 use iliada_search::files::{FileIndex, skipped};
 use iliada_search::proto::{Request, Response, socket_path};
 use iliada_search::usage::Usage;
@@ -35,21 +36,55 @@ fn apps_changed() -> Option<SystemTime> {
     apps::entry_dirs().iter().chain(bundle_dirs().iter()).filter_map(|d| d.metadata().ok()?.modified().ok()).max()
 }
 
+/// When Search extensions last changed: installed or removed, or turned
+/// off or given another keyword in Settings.
+fn extensions_changed() -> (Option<SystemTime>, Option<SystemTime>) {
+    let modified = |p: &Path| p.metadata().ok()?.modified().ok();
+    let choices = iliada_bundle::search::Choices::default_path();
+    (modified(Path::new(BUNDLES[0])), choices.as_deref().and_then(modified))
+}
+
+fn load_extensions(engine: &Engine, host: &extensions::Host) {
+    let found = iliada_bundle::search::installed();
+    let active: Vec<&str> = found.iter().filter(|e| e.active()).map(|e| e.id.as_str()).collect();
+    host.stop_idle(&active);
+    if !found.is_empty() {
+        tracing::info!(extensions = found.len(), active = active.len(), "Search extensions");
+    }
+    *engine.extensions.write().unwrap_or_else(|e| e.into_inner()) = found;
+}
+
 fn clip(store: &Mutex<Store>) -> std::sync::MutexGuard<'_, Store> {
     store.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn serve(engine: Arc<Engine>, store: Arc<Mutex<Store>>, focus: Arc<Focus>, stream: UnixStream) {
+fn serve(
+    engine: Arc<Engine>,
+    store: Arc<Mutex<Store>>,
+    focus: Arc<Focus>,
+    host: Arc<extensions::Host>,
+    stream: UnixStream,
+) {
     let Ok(read) = stream.try_clone() else { return };
     let mut writer = stream;
     for line in BufReader::new(read).lines() {
         let Ok(line) = line else { return };
         let reply = match serde_json::from_str::<Request>(&line) {
-            Ok(Request::Search { query, homer, limit }) => {
-                let t = Instant::now();
-                let hits = engine.search(&query, homer, limit);
-                Response::Hits { hits, micros: t.elapsed().as_micros() as u64 }
-            }
+            Ok(Request::Search { query, homer, limit }) => match engine.route(&query) {
+                // An extension answers; the overlay asks it separately.
+                Some((ext, rest)) => Response::Extension {
+                    extension: ext.id,
+                    title: ext.title,
+                    keyword: ext.keyword,
+                    placeholder: ext.placeholder,
+                    query: rest,
+                },
+                None => {
+                    let t = Instant::now();
+                    let hits = engine.search(&query, homer, limit);
+                    Response::Hits { hits, micros: t.elapsed().as_micros() as u64 }
+                }
+            },
             Ok(Request::OpenWith { path }) => {
                 let t = Instant::now();
                 let mut hits = engine.open_with(&path);
@@ -158,6 +193,32 @@ fn serve(engine: Arc<Engine>, store: Arc<Mutex<Store>>, focus: Arc<Focus>, strea
                     }
                     None => Response::Error { message: "that copy is no longer in the history".into() },
                 }
+            }
+            Ok(Request::ExtensionQuery { extension, query }) => {
+                let t = Instant::now();
+                let ext = engine
+                    .extensions
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .iter()
+                    .find(|e| e.id == extension && e.active())
+                    .cloned();
+                match ext {
+                    // Only what follows the keyword, and only when something does.
+                    Some(ext) if !query.trim().is_empty() => match host.query(&ext, query.trim()) {
+                        Outcome::Results(hits) => Response::Hits { hits, micros: t.elapsed().as_micros() as u64 },
+                        Outcome::NoResults => {
+                            Response::Hits { hits: Vec::new(), micros: t.elapsed().as_micros() as u64 }
+                        }
+                        Outcome::Stale => Response::Stale,
+                    },
+                    Some(_) => Response::Hits { hits: Vec::new(), micros: 0 },
+                    None => Response::Error { message: "that Search extension is not on".into() },
+                }
+            }
+            Ok(Request::ExtensionsStop) => {
+                host.stop_all();
+                Response::Done
             }
             Ok(Request::FocusWindow { identifier }) => match focus.focus(&identifier) {
                 Ok(()) => Response::Done,
@@ -316,6 +377,29 @@ fn main() -> Result<()> {
         });
     }
 
+    // Search extensions: started in their sandbox when their keyword is
+    // typed, stopped when the overlay closes or after a while unused.
+    let host = Arc::new(extensions::Host::new());
+    load_extensions(&engine, &host);
+    {
+        let (engine, host) = (engine.clone(), host.clone());
+        std::thread::spawn(move || {
+            let mut seen = extensions_changed();
+            loop {
+                std::thread::sleep(Duration::from_secs(5));
+                let now = extensions_changed();
+                if now != seen {
+                    seen = now;
+                    load_extensions(&engine, &host);
+                } else {
+                    let ext = engine.extensions.read().unwrap_or_else(|e| e.into_inner());
+                    let active: Vec<&str> = ext.iter().filter(|e| e.active()).map(|e| e.id.as_str()).collect();
+                    host.stop_idle(&active);
+                }
+            }
+        });
+    }
+
     // Answer at once (apps, Settings and answers work while the home folder
     // is indexed).
     let _ = std::fs::remove_file(&sock);
@@ -392,8 +476,8 @@ fn main() -> Result<()> {
     for stream in listener.incoming() {
         match stream {
             Ok(s) => {
-                let (engine, store, focus) = (engine.clone(), store.clone(), focus.clone());
-                std::thread::spawn(move || serve(engine, store, focus, s));
+                let (engine, store, focus, host) = (engine.clone(), store.clone(), focus.clone(), host.clone());
+                std::thread::spawn(move || serve(engine, store, focus, host, s));
             }
             Err(e) => tracing::warn!("accept: {e}"),
         }

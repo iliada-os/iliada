@@ -14,6 +14,8 @@
 //! * **Answers**: arithmetic, units and dates ([`calc`]).
 //! * **Recent** files and what you open most ([`usage`], [`recent`]).
 //! * **Open windows**: choosing one switches to it ([`windows`]).
+//! * **Extensions** from agora: `<keyword> ` hands what follows to a
+//!   sandboxed extension, which answers with results ([`extensions`]).
 //!
 //! * **Clipboard history** (Super+V): the last 200 copies, encrypted, skipping
 //!   secrets and excluded apps ([`clipboard`]).
@@ -33,6 +35,7 @@ pub mod calc;
 pub mod clipboard;
 pub mod clipboard_watch;
 pub mod engine;
+pub mod extensions;
 pub mod files;
 pub mod preview;
 pub mod proto;
@@ -63,6 +66,8 @@ pub enum Kind {
     Command,
     Clipboard,
     Window,
+    /// From a Search extension (its title is in [`Hit::source`]).
+    Extension,
 }
 
 impl Kind {
@@ -81,6 +86,7 @@ impl Kind {
             Kind::Command => "Terminal",
             Kind::Clipboard => "Clipboard",
             Kind::Window => "Window",
+            Kind::Extension => "Extension",
         }
     }
 }
@@ -150,7 +156,8 @@ pub struct Hit {
     /// When a clipboard item was copied, as seconds since the epoch (0: none).
     #[serde(default)]
     pub at: u64,
-    /// The app that copied a clipboard item, if known.
+    /// The app that copied a clipboard item, if known; the extension's
+    /// title for an extension's result.
     #[serde(default)]
     pub source: String,
 }

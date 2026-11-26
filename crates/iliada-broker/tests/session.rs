@@ -180,6 +180,7 @@ async fn follows_installs_and_removals() {
         network: false,
         categories: vec![],
         mime_types: vec![],
+        search: None,
     };
     Bundle::write_manifests(&layout, &info, &app().permissions, None).unwrap();
     let sock = transport::broker_socket(&sockets, &app().id);

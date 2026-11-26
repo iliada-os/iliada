@@ -30,6 +30,14 @@ microphone          = "not-requested"  # the app does not ask for this; in effec
 "clipboard.read"    = "unrestricted"   # NOT RESTRICTED YET; the desktop gives every window the clipboard, ...
 notifications       = "deny"           # fixed; there is no notification service inside the sandbox (no D-Bus)
 
+[apps."org.example.gh"]
+name = "GitHub Search"
+source = "agora"
+isolation = "sandbox"
+search_extension = "gh"  # a Search extension: it sees only what you type after "gh ", and can use the internet
+...
+network             = "allow"          # allow | deny | ask
+
 [apps."cosmic-term"]
 name = "Terminal"
 source = "built-in"
@@ -38,7 +46,17 @@ controlled_by_homer = "ask"  # allow | deny | ask; decided even for built-in pro
 ```
 
 Only the capability values are read back; `name`, `source`, `isolation`,
-`worst_case`, `risk` and the comments are regenerated from them.
+`search_extension`, `worst_case`, `risk` and the comments are regenerated
+from them.
+
+**Search extensions** (ADR 0009) are listed like apps, with
+`search_extension` set to the keyword they answer to. The comment says
+whether they can use the internet (their `network` value), and when they
+are turned off or waiting for a new keyword. Their `network` is decided
+like any app's: `deny` here (or in the system file) takes the internet
+away from the extension. Turning an extension off or changing its keyword
+is done in Settings → Privacy → Search, and kept in
+`~/.config/iliada/search-extensions.toml`.
 
 ## The system file (limits)
 
@@ -104,6 +122,7 @@ denied until it is fixed (`problems` says where).
 | `always` | what every sandboxed app has: its private folder (with path), files opened with it, a window |
 | `asks` | capabilities it will ask about the next time it opens |
 | `capabilities` | map from key to Entry |
+| `search` | only for Search extensions: `keyword`, `title`, `enabled` (not turned off), `active` (Search sends it queries now), `internet` (it can use the internet now), `clashes_with` (the extension that has its keyword, while it waits for a new one) |
 
 ### Entry
 

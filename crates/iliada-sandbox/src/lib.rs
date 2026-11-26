@@ -64,6 +64,9 @@ pub struct SandboxSpec {
     /// Where to bind an opened file from, when not from its own path (in a
     /// micro-VM: its link in the app's data directory).
     pub file_sources: std::collections::BTreeMap<PathBuf, PathBuf>,
+    /// Give it its broker socket, to ask for permissions. Search
+    /// extensions get none: they can never ask for anything (ADR 0009).
+    pub broker: bool,
 }
 
 /// Host resources a user's permission decisions add to a sandbox.
@@ -117,6 +120,7 @@ impl SandboxSpec {
             grants: Grants::default(),
             files: vec![],
             file_sources: Default::default(),
+            broker: true,
         })
     }
 }

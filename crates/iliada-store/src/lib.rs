@@ -349,6 +349,7 @@ mod tests {
             network: false,
             categories: vec![],
             mime_types: vec![],
+            search: None,
         };
         Bundle::write_manifests(&l, &info, &Permissions::default(), None).unwrap();
         let mut enc = zstd::Encoder::new(Vec::new(), 3).unwrap();
@@ -371,6 +372,7 @@ mod tests {
             archives: Archives::default(),
             icon: None,
             permissions: None,
+            search: None,
         };
         let a = Archive {
             url: archive.display().to_string(),

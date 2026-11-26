@@ -538,6 +538,7 @@ mod tests {
             grants: Default::default(),
             files: vec![],
             file_sources: Default::default(),
+            broker: true,
         }
     }
 

@@ -133,6 +133,7 @@ mod tests {
             network: false,
             categories: vec![],
             mime_types: vec![],
+            search: None,
         };
         let prov = Provenance {
             generator: "t".into(),
