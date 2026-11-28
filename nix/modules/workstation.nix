@@ -13,7 +13,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    boot.loader.systemd-boot.enable = lib.mkDefault true;
+    # The boot loader is GRUB with Iliada's boot menu (boot-menu.nix).
     boot.loader.efi.canTouchEfiVariables = lib.mkDefault true;
     hardware.enableRedistributableFirmware = lib.mkDefault true;
     networking.networkmanager.enable = lib.mkDefault true;

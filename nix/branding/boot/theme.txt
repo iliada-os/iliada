@@ -1,0 +1,58 @@
+# Iliada's boot menu (a GRUB theme). Images and fonts are made at build
+# time by nix/modules/boot-menu.nix, which also sets the font names and
+# fills in the texts in the system's language.
+title-text: ""
+desktop-image: "background.png"
+desktop-image-scale-method: "stretch"
+desktop-color: "#0B1630"
+
++ image {
+  left = 50%-185
+  top = 14%
+  width = 370
+  height = 128
+  file = "logo.png"
+}
+
++ boot_menu {
+  left = 50%-320
+  top = 14%+200
+  width = 640
+  height = 50%
+  item_font = "Iliada Regular 24"
+  selected_item_font = "Iliada Semibold Regular 24"
+  item_color = "#C9D2E3"
+  selected_item_color = "#FFFFFF"
+  item_height = 52
+  item_padding = 14
+  item_spacing = 10
+  icon_width = 32
+  icon_height = 32
+  item_icon_space = 18
+  item_pixmap_style = "item_*.png"
+  selected_item_pixmap_style = "select_*.png"
+  scrollbar = false
+}
+
++ label {
+  left = 0
+  top = 100%-80
+  width = 100%
+  height = 24
+  align = "center"
+  color = "#8C98B3"
+  font = "Iliada Regular 16"
+  text = "@hint@"
+}
+
++ label {
+  id = "__timeout__"
+  left = 0
+  top = 100%-48
+  width = 100%
+  height = 24
+  align = "center"
+  color = "#8C98B3"
+  font = "Iliada Regular 16"
+  text = "@timeout@"
+}

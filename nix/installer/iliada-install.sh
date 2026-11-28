@@ -6,7 +6,7 @@
 # Layout: GPT with a 1 GiB EFI system partition and an ext4 root. With
 # --free-space, both go into the largest unpartitioned stretch of a GPT disk
 # and nothing else on it is changed; Iliada gets its own EFI system partition,
-# and the firmware's start-up menu reaches the other system.
+# and its boot menu lists the other system (nix/modules/boot-menu.nix).
 # The installed system's configuration lives in /etc/iliada (a flake) and is
 # applied with `sudo nixos-rebuild switch --flake /etc/iliada#iliada`.
 

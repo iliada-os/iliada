@@ -161,7 +161,8 @@ you what you missed, and asks first unless you allow it there.
 
 Apps update on their own. Iliada itself: Settings → **Updates** →
 **Update now** (or `iliada system update`), then restart. If an update ever
-goes wrong, pick the previous entry in the boot menu.
+goes wrong, restart, press Esc as the computer starts, and choose the version
+before it under **Earlier versions of Iliada**.
 
 ## Back up, and move to a new computer
 

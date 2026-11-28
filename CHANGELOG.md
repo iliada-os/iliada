@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Boot menu**: Iliada now starts with a boot menu in its own colours
+  (GRUB). When Windows or another Linux is on the computer, the menu shows
+  at every start so you can choose; when Iliada is alone it stays out of the
+  way (press Esc as the computer starts to open it). Earlier versions of
+  Iliada are under **Earlier versions of Iliada**. The installer's own boot
+  menu has the same look. Computers installed with systemd-boot switch over
+  on their next update. Set `iliada.bootMenu.show` to `"always"` or
+  `"hidden"` to change when it shows.
 - **Notification Center**: notifications wait in a panel at the right of
   the screen, grouped by app, newest first. Click the clock in the top bar
   or press Super+N. Click a notification to open it in its app, use its
