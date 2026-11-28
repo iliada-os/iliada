@@ -178,8 +178,10 @@ def main():
     ap.add_argument("--workdir", required=True)
     ap.add_argument("--vnc", type=int, default=1, help="VNC display number (port 5900+N)")
     ap.add_argument("--vncdo", help="unused (screenshots now come from QEMU's monitor); still accepted")
-    ap.add_argument("--keys", help="keys to press at the boot menu, 6 s after power-on, "
-                    "e.g. 'down down ret' (QEMU sendkey names)")
+    ap.add_argument("--keys", help="keys to press at the boot menu, e.g. 'down down ret' "
+                    "(QEMU sendkey names)")
+    ap.add_argument("--keys-at", type=int, default=8,
+                    help="when to press them, in seconds after power-on (even; default 8)")
     ap.add_argument("--boot-only", action="store_true", help="skip installation; boot the existing disk")
     ap.add_argument("--next-to-windows", action="store_true",
                     help="put a stand-in for Windows on the disk first, and install next to it")
@@ -257,12 +259,12 @@ def boot_installed(args, disk, sock):
         for t in range(2, 25, 2):
             time.sleep(max(0.0, start + t - time.time()))
             mon.screenshot(os.path.join(args.workdir, f"start-{t:02d}s.png"))
-            if t == 6:
+            if t == args.keys_at:
                 for key in keys:
                     mon.command(f"sendkey {key}")
                     time.sleep(0.3)
                 if keys:
-                    mon.screenshot(os.path.join(args.workdir, "start-06s-keys.png"))
+                    mon.screenshot(os.path.join(args.workdir, f"start-{t:02d}s-keys.png"))
         time.sleep(max(0.0, start + 90 - time.time()))
         if vm.poll() is not None:
             print("installed system's VM exited early", file=sys.stderr)
