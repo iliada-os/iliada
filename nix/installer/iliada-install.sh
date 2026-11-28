@@ -120,6 +120,21 @@ iliada-systemd init --root /mnt --source "$SOURCE" --profile hardware \
 
 step "Installing Iliada (this downloads and builds the system)"
 nixos-install --root /mnt --flake git+file:///mnt/etc/iliada#iliada --no-root-passwd --no-channel-copy
+
+step "Looking for other systems for the boot menu"
+# Windows or another Linux, next to Iliada or on another disk. os-prober
+# finds them by asking udev what each partition is, and nixos-install's
+# chroot has no udev (its own /run hides a bind mount made from outside).
+# Lend it the live system's udev data, bound in after the chroot is set up,
+# and write the boot menu again.
+mkdir -p /mnt/var/lib/iliada-install-udev
+mount --bind /run/udev /mnt/var/lib/iliada-install-udev
+nixos-enter --root /mnt -c 'mkdir -p /run/udev && mount --bind /var/lib/iliada-install-udev /run/udev &&
+  NIXOS_INSTALL_BOOTLOADER=1 /run/current-system/bin/switch-to-configuration boot' ||
+  echo "warning: other systems are not in the boot menu yet; they will be after the first update"
+umount /mnt/var/lib/iliada-install-udev
+rmdir /mnt/var/lib/iliada-install-udev
+
 iliada-systemd finish --root /mnt
 
 step "Setting the password for $USERNAME"

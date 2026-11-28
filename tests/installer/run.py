@@ -164,7 +164,9 @@ def qemu(args, disk, sock, cdrom=None):
         "-monitor", f"unix:{os.path.join(args.workdir, 'monitor.sock')},server=on,wait=off",
     ]
     if cdrom:
-        cmd += ["-cdrom", cdrom, "-boot", "d"]
+        # First in the boot order even when the disk can start a system.
+        cmd += ["-drive", f"file={cdrom},if=none,id=cd,media=cdrom,readonly=on",
+                "-device", "ide-cd,drive=cd,bootindex=0"]
     return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
