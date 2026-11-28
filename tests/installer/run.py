@@ -119,15 +119,28 @@ class Monitor:
         self.s.sendall(line.encode() + b"\n")
         self._read()
 
+    def screen(self, tmp: str):
+        """The screen now, as (width, height, RGB bytes)."""
+        self.command(f"screendump {tmp}")
+        image = read_ppm(tmp)
+        os.remove(tmp)
+        return image
+
     def screenshot(self, png: str):
-        ppm = png + ".ppm"
-        self.command(f"screendump {ppm}")
-        ppm_to_png(ppm, png)
-        os.remove(ppm)
+        write_png(png, *self.screen(png + ".ppm"))
 
 
-def ppm_to_png(ppm: str, png: str):
-    """A binary PPM (what screendump writes) as a PNG, with the standard library."""
+def boot_menu_on_screen(image) -> bool:
+    """Iliada's boot menu: the navy background (the firmware and the
+    kernel's console are black, the greeter is a picture)."""
+    width, height, pixels = image
+    i = ((height // 20) * width + width // 2) * 3
+    r, g, b = pixels[i], pixels[i + 1], pixels[i + 2]
+    return r < 70 and b > 60 and b > r + 25
+
+
+def read_ppm(ppm: str):
+    """A binary PPM (what screendump writes): (width, height, RGB bytes)."""
     data = open(ppm, "rb").read()
     fields, pos = [], 0
     while len(fields) < 4:  # P6, width, height, maxval
@@ -138,7 +151,11 @@ def ppm_to_png(ppm: str, png: str):
             pos += 1
         fields.append(data[start:pos])
     width, height = int(fields[1]), int(fields[2])
-    pixels = data[pos + 1:]
+    return width, height, data[pos + 1:]
+
+
+def write_png(png: str, width: int, height: int, pixels: bytes):
+    """RGB bytes as a PNG, with the standard library."""
     rows = b"".join(b"\0" + pixels[y * width * 3:(y + 1) * width * 3] for y in range(height))
 
     def chunk(kind, body):
@@ -178,10 +195,8 @@ def main():
     ap.add_argument("--workdir", required=True)
     ap.add_argument("--vnc", type=int, default=1, help="VNC display number (port 5900+N)")
     ap.add_argument("--vncdo", help="unused (screenshots now come from QEMU's monitor); still accepted")
-    ap.add_argument("--keys", help="keys to press at the boot menu, e.g. 'down down ret' "
-                    "(QEMU sendkey names)")
-    ap.add_argument("--keys-at", type=int, default=8,
-                    help="when to press them, in seconds after power-on (even; default 8)")
+    ap.add_argument("--keys", help="keys to press once the boot menu is on screen, "
+                    "e.g. 'down down ret' (QEMU sendkey names)")
     ap.add_argument("--boot-only", action="store_true", help="skip installation; boot the existing disk")
     ap.add_argument("--next-to-windows", action="store_true",
                     help="put a stand-in for Windows on the disk first, and install next to it")
@@ -254,17 +269,29 @@ def boot_installed(args, disk, sock):
     try:
         start = time.time()
         mon = Monitor(mon_sock)
-        # The first seconds: the boot menu (or, when it stays hidden, none).
+        # The first seconds: a screenshot every two, and whether (and when)
+        # the boot menu shows; --keys are pressed as soon as it does.
         keys = args.keys.split() if args.keys else []
-        for t in range(2, 25, 2):
-            time.sleep(max(0.0, start + t - time.time()))
-            mon.screenshot(os.path.join(args.workdir, f"start-{t:02d}s.png"))
-            if t == args.keys_at:
+        tmp = os.path.join(args.workdir, "screen.ppm")
+        menu_seen, next_shot = False, 2.0
+        while time.time() - start < 24:
+            image = mon.screen(tmp)
+            now = time.time() - start
+            if now >= next_shot:
+                write_png(os.path.join(args.workdir, f"start-{int(next_shot):02d}s.png"), *image)
+                next_shot += 2
+            if not menu_seen and boot_menu_on_screen(image):
+                menu_seen = True
+                print(f"boot menu on screen after {now:.1f} s", flush=True)
+                write_png(os.path.join(args.workdir, "menu.png"), *image)
                 for key in keys:
                     mon.command(f"sendkey {key}")
                     time.sleep(0.3)
                 if keys:
-                    mon.screenshot(os.path.join(args.workdir, f"start-{t:02d}s-keys.png"))
+                    mon.screenshot(os.path.join(args.workdir, "menu-after-keys.png"))
+            time.sleep(0.5)
+        if not menu_seen:
+            print("no boot menu in the first 24 s", flush=True)
         time.sleep(max(0.0, start + 90 - time.time()))
         if vm.poll() is not None:
             print("installed system's VM exited early", file=sys.stderr)

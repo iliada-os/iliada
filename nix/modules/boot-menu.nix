@@ -17,12 +17,12 @@ let
     earlier = "Προηγούμενες εκδόσεις της Ιλιάδας";
     from = date: n: "${distro} της ${date} (#${n})";
     hint = "Επιλογή με τα βελάκια  ·  Enter για εκκίνηση";
-    timeout = "Εκκίνηση σε %d δευτερόλεπτα";
+    timeout = "Εκκίνηση σε %d δευτ.";
   } else {
     earlier = "Earlier versions of ${distro}";
     from = date: n: "${distro} from ${date} (#${n})";
     hint = "Arrow keys to choose  ·  Enter to start";
-    timeout = "Starting in %d seconds";
+    timeout = "Starting in %d s";
   };
 
   theme = pkgs.runCommand "iliada-boot-theme" {
