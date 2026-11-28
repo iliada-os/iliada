@@ -26,6 +26,7 @@ import socket
 import subprocess
 import sys
 import time
+import zlib
 
 
 class Serial:
@@ -90,6 +91,67 @@ umount /tmp/win
 """
 
 
+class Monitor:
+    """QEMU's human monitor: screenshots and key presses (more dependable
+    than VNC while the firmware and the boot menu change the screen mode)."""
+
+    def __init__(self, path: str):
+        deadline = time.time() + 30
+        while True:
+            try:
+                self.s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                self.s.connect(path)
+                break
+            except OSError:
+                if time.time() > deadline:
+                    raise
+                time.sleep(0.2)
+        self.s.settimeout(5)
+        self._read()
+
+    def _read(self):
+        out = b""
+        while not out.endswith(b"(qemu) "):
+            out += self.s.recv(65536)
+        return out
+
+    def command(self, line: str):
+        self.s.sendall(line.encode() + b"\n")
+        self._read()
+
+    def screenshot(self, png: str):
+        ppm = png + ".ppm"
+        self.command(f"screendump {ppm}")
+        ppm_to_png(ppm, png)
+        os.remove(ppm)
+
+
+def ppm_to_png(ppm: str, png: str):
+    """A binary PPM (what screendump writes) as a PNG, with the standard library."""
+    data = open(ppm, "rb").read()
+    fields, pos = [], 0
+    while len(fields) < 4:  # P6, width, height, maxval
+        while data[pos:pos + 1].isspace():
+            pos += 1
+        start = pos
+        while not data[pos:pos + 1].isspace():
+            pos += 1
+        fields.append(data[start:pos])
+    width, height = int(fields[1]), int(fields[2])
+    pixels = data[pos + 1:]
+    rows = b"".join(b"\0" + pixels[y * width * 3:(y + 1) * width * 3] for y in range(height))
+
+    def chunk(kind, body):
+        return (len(body).to_bytes(4, "big") + kind + body
+                + zlib.crc32(kind + body).to_bytes(4, "big"))
+
+    with open(png, "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\n")
+        f.write(chunk(b"IHDR", width.to_bytes(4, "big") + height.to_bytes(4, "big") + bytes([8, 2, 0, 0, 0])))
+        f.write(chunk(b"IDAT", zlib.compress(rows, 6)))
+        f.write(chunk(b"IEND", b""))
+
+
 def qemu(args, disk, sock, cdrom=None):
     cmd = [
         args.qemu, "-enable-kvm", "-machine", "q35", "-cpu", "host", "-m", "4096", "-smp", "4",
@@ -99,6 +161,7 @@ def qemu(args, disk, sock, cdrom=None):
         "-serial", f"unix:{sock},server=on,wait=off",
         "-vga", "none", "-device", "virtio-vga,xres=1600,yres=1000",
         "-display", "none", "-vnc", f"127.0.0.1:{args.vnc}",
+        "-monitor", f"unix:{os.path.join(args.workdir, 'monitor.sock')},server=on,wait=off",
     ]
     if cdrom:
         cmd += ["-cdrom", cdrom, "-boot", "d"]
@@ -112,7 +175,9 @@ def main():
     ap.add_argument("--ovmf", required=True)
     ap.add_argument("--workdir", required=True)
     ap.add_argument("--vnc", type=int, default=1, help="VNC display number (port 5900+N)")
-    ap.add_argument("--vncdo", help="vncdo binary, to capture a screenshot of the installed system")
+    ap.add_argument("--vncdo", help="unused (screenshots now come from QEMU's monitor); still accepted")
+    ap.add_argument("--keys", help="keys to press at the boot menu, 6 s after power-on, "
+                    "e.g. 'down down ret' (QEMU sendkey names)")
     ap.add_argument("--boot-only", action="store_true", help="skip installation; boot the existing disk")
     ap.add_argument("--next-to-windows", action="store_true",
                     help="put a stand-in for Windows on the disk first, and install next to it")
@@ -178,24 +243,31 @@ def main():
 
 def boot_installed(args, disk, sock):
     print("[3/3] booting the installed system", flush=True)
+    mon_sock = os.path.join(args.workdir, "monitor.sock")
+    if os.path.exists(mon_sock):
+        os.remove(mon_sock)
     vm = qemu(args, disk, sock)
     try:
         start = time.time()
-        if args.vncdo:
-            # The first seconds: the boot menu (or, when it stays hidden, none).
-            for i in range(12):
-                time.sleep(max(0.0, start + 2 * (i + 1) - time.time()))
-                shot = os.path.join(args.workdir, f"start-{2 * (i + 1):02d}s.png")
-                subprocess.run([args.vncdo, "-s", f"127.0.0.1::{5900 + args.vnc}", "capture", shot],
-                               check=False, timeout=10)
+        mon = Monitor(mon_sock)
+        # The first seconds: the boot menu (or, when it stays hidden, none).
+        keys = args.keys.split() if args.keys else []
+        for t in range(2, 25, 2):
+            time.sleep(max(0.0, start + t - time.time()))
+            mon.screenshot(os.path.join(args.workdir, f"start-{t:02d}s.png"))
+            if t == 6:
+                for key in keys:
+                    mon.command(f"sendkey {key}")
+                    time.sleep(0.3)
+                if keys:
+                    mon.screenshot(os.path.join(args.workdir, "start-06s-keys.png"))
         time.sleep(max(0.0, start + 90 - time.time()))
         if vm.poll() is not None:
             print("installed system's VM exited early", file=sys.stderr)
             return 1
-        if args.vncdo:
-            shot = os.path.join(args.workdir, "installed.png")
-            subprocess.run([args.vncdo, "-s", f"127.0.0.1::{5900 + args.vnc}", "capture", shot], check=True)
-            print(f"screenshot: {shot}", flush=True)
+        shot = os.path.join(args.workdir, "installed.png")
+        mon.screenshot(shot)
+        print(f"screenshot: {shot}", flush=True)
     finally:
         vm.kill()
     print("OK", flush=True)
