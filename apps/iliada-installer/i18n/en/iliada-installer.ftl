@@ -64,7 +64,7 @@ confirm-keep-title =
     }
 confirm-keep-body =
     { $kind ->
-       *[system] { $what } stays as it is. When the computer starts, Iliada starts; to start { $what } instead, open the start-up menu (usually F9, F12 or Esc while the computer starts).
+       *[system] { $what } stays as it is. When the computer starts, a menu lets you choose Iliada or { $what }. If { $what } is not in it, your computer's own start-up menu still reaches it (usually F9, F12 or Esc while the computer starts).
     }
 install = Install
 confirm-erase-title = Erase the disk and install Iliada?

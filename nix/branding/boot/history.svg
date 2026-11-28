@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Earlier versions of Iliada: a clock turning back. -->
+  <g fill="none" stroke="#DDA34E" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.2 12.5A10.5 10.5 0 1 1 5.5 17"/>
+    <path d="M5 7.5v5.5h5.5"/>
+    <path d="M16 10v6.5l4 2.5"/>
+  </g>
+</svg>

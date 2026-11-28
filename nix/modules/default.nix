@@ -5,7 +5,8 @@
 #   iliada.isolation     sandbox tiers, VMM, guest kernel, network policy
 #   iliada.broker        the runtime permission broker
 #   iliada.desktop       COSMIC desktop
-#   iliada.workstation   networking, audio, bluetooth, firmware, boot loader
+#   iliada.workstation   networking, audio, bluetooth, firmware
+#   iliada.bootMenu      GRUB in Iliada's look, listing other systems too
 #   iliada.rustUserland  Rust coreutils, sudo-rs, ntpd-rs, fish
 #   iliada.baseTools     everyday command-line tools (lspci, dig, lsof, jq, …)
 #   iliada.settingsFile  settings.toml: command-line tools, services, language
@@ -23,6 +24,7 @@
     ./broker.nix
     ./desktop.nix
     ./workstation.nix
+    ./boot-menu.nix
     ./rust-userland.nix
     ./base-tools.nix
     ./settings.nix

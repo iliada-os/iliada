@@ -57,7 +57,9 @@ internet during installation.
 3. **Boot it** (UEFI). You land in a COSMIC live session, and **Install
    Iliada** opens: choose the disk, enter your name, account name, computer
    name, password and time zone, confirm, and wait. The **whole disk** is
-   erased (GPT: 1 GiB EFI partition + ext4 root).
+   erased (GPT: 1 GiB EFI partition + ext4 root), unless Iliada fits next
+   to the system already on it (Windows, another Linux): then nothing else
+   changes, and a boot menu lets you choose between them at every start.
 4. Restart and remove the USB stick. On first login the **Setup Assistant**
    offers to restore a backup from GitHub or to start backing this computer up.
 
@@ -116,7 +118,9 @@ every six hours (`iliada.store.updateInterval`).
 
 Edit `configuration.nix` by hand if you like, then apply it with
 `iliada system apply`. Every change is atomic. If a change breaks something,
-reboot and pick the previous entry in the boot menu.
+reboot and pick it under **Earlier versions of Iliada** in the boot menu
+(it shows by itself when another system is installed; otherwise press Esc
+as the computer starts).
 
 ### Backup and restore
 

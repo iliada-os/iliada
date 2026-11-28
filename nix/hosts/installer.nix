@@ -72,7 +72,8 @@ in
   # user needs no password, as on the stock NixOS installer.
   security.sudo.enable = lib.mkForce false;
   security.sudo-rs.wheelNeedsPassword = false;
-  # The ISO has its own boot loader.
+  # The ISO has its own boot loader, in the installed system's look.
+  isoImage.grubTheme = config.iliada.bootMenu.theme;
   boot.loader.systemd-boot.enable = lib.mkForce false;
   boot.loader.efi.canTouchEfiVariables = lib.mkForce false;
   # Also log in on the serial console (used by the automated install test).
